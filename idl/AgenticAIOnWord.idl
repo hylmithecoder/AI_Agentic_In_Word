@@ -1,0 +1,37 @@
+// AgenticAIOnWord.idl : IDL source for AgenticAIOnWord
+//
+
+// This file will be processed by the MIDL tool to
+// produce the type library (AgenticAIOnWord.tlb) and marshalling code.
+
+import "oaidl.idl";
+import "ocidl.idl";
+
+[
+	uuid(cddbcd6c-2230-4b77-bd3c-2d09ed326605),
+	version(1.0),
+]
+library AgenticAIOnWordLib
+{
+	importlib("stdole2.tlb");
+
+	// Connect class - main add-in entry point
+	[
+		uuid(A1B2C3D4-E5F6-7890-ABCD-EF1234567890)
+	]
+	coclass Connect
+	{
+		[default] interface IDispatch;
+	};
+
+	// TaskPaneControl - ActiveX control for the task pane
+	[
+		uuid(B2C3D4E5-F6A7-8901-BCDE-F23456789012),
+		control
+	]
+	coclass TaskPaneControl
+	{
+		[default] interface IDispatch;
+	};
+};
+

@@ -1,0 +1,27 @@
+HKCR
+{
+    AgenticAIOnWord.Connect.1 = s 'Connect Class'
+    {
+        CLSID = s '{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}'
+    }
+    AgenticAIOnWord.Connect = s 'Connect Class'
+    {
+        CLSID = s '{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}'
+        CurVer = s 'AgenticAIOnWord.Connect.1'
+    }
+    NoRemove CLSID
+    {
+        ForceRemove {A1B2C3D4-E5F6-7890-ABCD-EF1234567890} = s 'Connect Class'
+        {
+            ProgID = s 'AgenticAIOnWord.Connect.1'
+            VersionIndependentProgID = s 'AgenticAIOnWord.Connect'
+            ForceRemove Programmable
+            InprocServer32 = s '%MODULE%'
+            {
+                val ThreadingModel = s 'Apartment'
+            }
+            TypeLib = s '{cddbcd6c-2230-4b77-bd3c-2d09ed326605}'
+            Version = s '1.0'
+        }
+    }
+}

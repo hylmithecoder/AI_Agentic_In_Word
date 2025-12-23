@@ -1,0 +1,9 @@
+Windows Registry Editor Version 5.00
+
+; Word Add-in registration for AgenticAIOnWord
+; This registers the add-in so Word will load it automatically
+
+[HKEY_CURRENT_USER\Software\Microsoft\Office\Word\Addins\AgenticAIOnWord.Connect]
+"FriendlyName"="Agentic AI Assistant"
+"Description"="AI-powered Task Pane add-in for Microsoft Word"
+"LoadBehavior"=dword:00000003

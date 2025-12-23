@@ -1,0 +1,40 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.13.35919.96 d17.13
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "AgenticAIOnWord", "AgenticAIOnWord.vcxproj", "{8726A8C6-2926-05EF-85AF-656C5A54C16A}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "AgenticAIOnWordPS", "AgenticAIOnWordPS\AgenticAIOnWordPS.vcxproj", "{E59EAE05-135D-7D93-E61B-BCDD3CA910DB}"
+	ProjectSection(ProjectDependencies) = postProject
+		{8726A8C6-2926-05EF-85AF-656C5A54C16A} = {8726A8C6-2926-05EF-85AF-656C5A54C16A}
+	EndProjectSection
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Debug|x86 = Debug|x86
+		Release|x64 = Release|x64
+		Release|x86 = Release|x86
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{8726A8C6-2926-05EF-85AF-656C5A54C16A}.Debug|x64.ActiveCfg = Debug|x64
+		{8726A8C6-2926-05EF-85AF-656C5A54C16A}.Debug|x64.Build.0 = Debug|x64
+		{8726A8C6-2926-05EF-85AF-656C5A54C16A}.Debug|x86.ActiveCfg = Debug|Win32
+		{8726A8C6-2926-05EF-85AF-656C5A54C16A}.Debug|x86.Build.0 = Debug|Win32
+		{8726A8C6-2926-05EF-85AF-656C5A54C16A}.Release|x64.ActiveCfg = Release|x64
+		{8726A8C6-2926-05EF-85AF-656C5A54C16A}.Release|x64.Build.0 = Release|x64
+		{8726A8C6-2926-05EF-85AF-656C5A54C16A}.Release|x86.ActiveCfg = Release|Win32
+		{8726A8C6-2926-05EF-85AF-656C5A54C16A}.Release|x86.Build.0 = Release|Win32
+		{E59EAE05-135D-7D93-E61B-BCDD3CA910DB}.Debug|x64.ActiveCfg = Debug|x64
+		{E59EAE05-135D-7D93-E61B-BCDD3CA910DB}.Debug|x86.ActiveCfg = Debug|Win32
+		{E59EAE05-135D-7D93-E61B-BCDD3CA910DB}.Release|x64.ActiveCfg = Release|x64
+		{E59EAE05-135D-7D93-E61B-BCDD3CA910DB}.Release|x86.ActiveCfg = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {0D814B55-C244-4799-9930-C5AE5D43AE5A}
+	EndGlobalSection
+EndGlobal

@@ -1,0 +1,10 @@
+/x64/
+/Debug/
+/Release/
+/AgenticAIOnWord/
+/build/
+/.vs/
+/.cache/
+/cmake-build/
+
+AgenticAIOnWord_i.*

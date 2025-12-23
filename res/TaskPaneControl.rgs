@@ -1,0 +1,33 @@
+HKCR
+{
+    AgenticAIOnWord.TaskPaneControl.1 = s 'TaskPaneControl Class'
+    {
+        CLSID = s '{B2C3D4E5-F6A7-8901-BCDE-F23456789012}'
+    }
+    AgenticAIOnWord.TaskPaneControl = s 'TaskPaneControl Class'
+    {
+        CLSID = s '{B2C3D4E5-F6A7-8901-BCDE-F23456789012}'
+        CurVer = s 'AgenticAIOnWord.TaskPaneControl.1'
+    }
+    NoRemove CLSID
+    {
+        ForceRemove {B2C3D4E5-F6A7-8901-BCDE-F23456789012} = s 'TaskPaneControl Class'
+        {
+            ProgID = s 'AgenticAIOnWord.TaskPaneControl.1'
+            VersionIndependentProgID = s 'AgenticAIOnWord.TaskPaneControl'
+            ForceRemove Programmable
+            InprocServer32 = s '%MODULE%'
+            {
+                val ThreadingModel = s 'Apartment'
+            }
+            ForceRemove Control
+            ForceRemove Insertable
+            TypeLib = s '{cddbcd6c-2230-4b77-bd3c-2d09ed326605}'
+            Version = s '1.0'
+            MiscStatus = s '0'
+            {
+                1 = s '131473'
+            }
+        }
+    }
+}
