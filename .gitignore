@@ -6,5 +6,13 @@
 /.vs/
 /.cache/
 /cmake-build/
+/AgenticAIOnWordPS/
+AgenticAIOnWordps.def
 
 AgenticAIOnWord_i.*
+
+# zig
+/zig-out/
+/.zig-cache/
+ms_word.db
+.env

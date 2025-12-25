@@ -2,9 +2,13 @@
 // This control hosts the Task Pane UI content
 
 #pragma once
+#include "client/client.hpp"
 #include "framework.h"
 #include "resource.h"
+#include <string>
 
+using namespace std;
+using namespace MCPHelper;
 
 // Define CLSIDs/LIBIDs directly (must match AgenticAIOnWord.idl)
 // Library GUID: {cddbcd6c-2230-4b77-bd3c-2d09ed326605}
@@ -92,10 +96,13 @@ public:
                            BOOL &bHandled);
 
 private:
+  MCPClient client;
   // Child controls
   CWindow m_wndTitleLabel;
   CWindow m_wndInfoLabel;
   CWindow m_wndActionButton;
+  CWindow m_wndChatArea;
+  CWindow m_wndSendButton;
   HBRUSH m_hBkBrush = nullptr;
 
   // Control IDs

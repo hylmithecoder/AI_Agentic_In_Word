@@ -5,7 +5,6 @@
 #include "framework.h"
 #include "resource.h"
 
-
 // Define CLSIDs/LIBIDs directly (must match AgenticAIOnWord.idl)
 // Library GUID: {cddbcd6c-2230-4b77-bd3c-2d09ed326605}
 static const GUID LIBID_AgenticAIOnWordLib_Connect = {
@@ -25,6 +24,7 @@ using namespace ATL;
 
 // CConnect - Main add-in class implementing IDTExtensibility2 and
 // ICustomTaskPaneConsumer
+// namespace ConnectHandler {
 class ATL_NO_VTABLE CConnect
     : public CComObjectRootEx<CComSingleThreadModel>,
       public CComCoClass<CConnect, &CLSID_Connect>,
@@ -70,5 +70,7 @@ private:
   IDispatch *m_pApplication;
   Office::_CustomTaskPane *m_pCustomTaskPane;
 };
+
+// } // namespace ConnectHandler
 
 OBJECT_ENTRY_AUTO(CLSID_Connect, CConnect)

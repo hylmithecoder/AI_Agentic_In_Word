@@ -25,13 +25,11 @@ if(WIN32)
     add_definitions(-DATL_NO_ASSERT_ON_DESTROY_NONEXISTENT_WINDOW)
 endif()
 
+file(GLOB SOURCES_CODE "src/*.cpp" "src/client/*.cpp")
+
 # Source files
 set(SOURCES
-    src/pch.cpp
-    src/dllmain.cpp
-    src/AgenticAIOnWord.cpp
-    src/Connect.cpp
-    src/TaskPaneControl.cpp
+    ${SOURCES_CODE}
     AgenticAIOnWord_i.c
 )
 
@@ -44,6 +42,7 @@ set(HEADERS
     include/dllmain.h
     include/Connect.h
     include/TaskPaneControl.h
+    include/client/client.hpp
 )
 
 # Create shared library (DLL)
@@ -53,10 +52,15 @@ add_library(${PROJECT_NAME} SHARED
     res/AgenticAIOnWord.rc
 )
 
+include_directories(
+    third_party/nfd/include
+)
+
 # Include directories
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nfd/include
 )
 
 # Link libraries for COM/ATL

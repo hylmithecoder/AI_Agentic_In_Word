@@ -7,6 +7,7 @@
 #define IDR_AGENTICAIONWORD 101
 #define IDR_CONNECT 102
 #define IDR_TASKPANECONTROL 103
+#define ID_BTN_GET_STARTED 1001
 
 // Next default values for new objects
 //

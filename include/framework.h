@@ -21,6 +21,23 @@
 #include <atltypes.h>
 #include <atlwin.h>
 
+// using namespace HelperDatabase;
+
+// namespace HandlerDatabaseCore {
+// class DatabaseCore {
+// public:
+//   Database *dbHelper = nullptr;
+
+//   DatabaseCore() {
+//     LOG("Database Core Initialized", LogLevel::INFO);
+//     dbHelper = new Database();
+//     dbHelper->LoadDb();
+//     dbHelper->ShowTables();
+//   }
+
+//   ~DatabaseCore() { dbHelper->CloseDb(); }
+// };
+// } // namespace HandlerDatabaseCore
 
 // ============================================================================
 // Office Type Library Imports (Office 2010)

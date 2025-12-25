@@ -2,7 +2,7 @@
 
 #include "TaskPaneControl.h"
 #include "framework.h"
-
+#include <string>
 
 // Drawing handler - paints the control background
 HRESULT CTaskPaneControl::OnDraw(ATL_DRAWINFO &di) {
@@ -49,20 +49,27 @@ LRESULT CTaskPaneControl::OnCreate(UINT uMsg, WPARAM wParam, LPARAM lParam,
 
   // Set font for title
   HFONT hTitleFont =
-      CreateFont(22, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
+      CreateFont(20, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
                  OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
                  DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
+
   m_wndTitleLabel.SendMessage(WM_SETFONT, (WPARAM)hTitleFont, TRUE);
 
+  std::wstring infoText = L"Agentic AI Chat";
+
   // Create info label
-  m_wndInfoLabel.Create(L"STATIC", m_hWnd, CRect(10, 70, 10 + width, 150),
-                        L"This task pane provides AI-powered assistance for "
-                        L"your Word documents.\r\n\r\n"
-                        L"Features coming soon:\r\n"
-                        L"• AI text generation\r\n"
-                        L"• Document analysis\r\n"
-                        L"• Smart suggestions",
-                        WS_CHILD | WS_VISIBLE | SS_LEFT);
+  m_wndInfoLabel.Create(L"STATIC", m_hWnd, CRect(10, 70, 10 + width, 350),
+                        infoText.c_str(), WS_CHILD | WS_VISIBLE | SS_LEFT);
+
+  m_wndChatArea.Create(L"STATIC", m_hWnd, CRect(10, 70, 10 + width, 280),
+                       L"🤖 AI: Hello Hylmi.\r\nReady to assist you.",
+                       WS_CHILD | WS_VISIBLE | SS_LEFT | SS_EDITCONTROL);
+
+  HFONT hChatFont =
+      CreateFont(14, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
+                 OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                 DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
+  m_wndChatArea.SendMessage(WM_SETFONT, (WPARAM)hChatFont, TRUE);
 
   HFONT hInfoFont =
       CreateFont(14, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
@@ -70,16 +77,23 @@ LRESULT CTaskPaneControl::OnCreate(UINT uMsg, WPARAM wParam, LPARAM lParam,
                  DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
   m_wndInfoLabel.SendMessage(WM_SETFONT, (WPARAM)hInfoFont, TRUE);
 
-  // Create action button
-  m_wndActionButton.Create(L"BUTTON", m_hWnd, CRect(10, 170, 10 + width, 205),
-                           L"Get Started",
-                           WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON);
+  m_wndSendButton.Create(L"BUTTON", m_hWnd,
+                         CRect(10 + width - 60, 290, 10 + width, 325), L"Send",
+                         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON);
+  m_wndSendButton.SendMessage(WM_SETFONT, (WPARAM)hChatFont, TRUE);
 
-  HFONT hBtnFont =
-      CreateFont(14, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
-                 OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
-                 DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
-  m_wndActionButton.SendMessage(WM_SETFONT, (WPARAM)hBtnFont, TRUE);
+  // Create action button
+  // m_wndActionButton.Create(L"BUTTON", m_hWnd, CRect(10, 360, 10 + width,
+  // 410),
+  //                          L"Get Started",
+  //                          WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON);
+
+  // HFONT hBtnFont =
+  //     CreateFont(14, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
+  //     DEFAULT_CHARSET,
+  //                OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+  //                DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
+  // m_wndActionButton.SendMessage(WM_SETFONT, (WPARAM)hBtnFont, TRUE);
 
   return 0;
 }

@@ -126,7 +126,7 @@
       <PreprocessorDefinitions>WIN32;_WINDOWS;_DEBUG;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <SDLCheck>true</SDLCheck>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)include;C:\Program Files (x86)\Windows Kits\10\Include\10.0.19041.0\ucrt;C:\Program Files (x86)\Windows Kits\10\Include\10.0.19041.0\um;C:\Program Files (x86)\Windows Kits\10\Include\10.0.19041.0\shared;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)include;C:\Program Files (x86)\Windows Kits\10\Include\10.0.19041.0\ucrt;C:\Program Files (x86)\Windows Kits\10\Include\10.0.19041.0\um;C:\Program Files (x86)\Windows Kits\10\Include\10.0.19041.0\shared;$(ProjectDir)third_party\nfd\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Midl>
       <MkTypLibCompatible>false</MkTypLibCompatible>
@@ -149,12 +149,13 @@
       <SubSystem>Windows</SubSystem>
       <ModuleDefinitionFile>.\res\AgenticAIOnWord.def</ModuleDefinitionFile>
       <RegisterOutput>false</RegisterOutput>
-      <AdditionalLibraryDirectories>C:\Program Files (x86)\Windows Kits\10\Lib\10.0.19041.0\ucrt\x86;C:\Program Files (x86)\Windows Kits\10\Lib\10.0.19041.0\um\x86;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>C:\Program Files (x86)\Windows Kits\10\Lib\10.0.19041.0\ucrt\x86;C:\Program Files (x86)\Windows Kits\10\Lib\10.0.19041.0\um\x86;${ProjectDir}third_party\nfd\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <!-- <AdditionalDependencies>nfd.lib;%(AdditionalDependencies)</AdditionalDependencies> -->
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
-      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>MaxSpeed</Optimization>
       <PreprocessorDefinitions>WIN32;_WINDOWS;NDEBUG;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -184,6 +185,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <RegisterOutput>true</RegisterOutput>
+      <AdditionalLibraryDirectories>C:\Program Files (x86)\Windows Kits\10\Lib\10.0.19041.0\ucrt\x86;C:\Program Files (x86)\Windows Kits\10\Lib\10.0.19041.0\um\x86;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -228,9 +230,11 @@
     <ClInclude Include="include\Resource.h" />
     <ClInclude Include="include\targetver.h" />
     <ClInclude Include="include\TaskPaneControl.h" />
+    <ClInclude Include="include\debugger.hpp" />
+    <ClInclude Include="include\client\client.hpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="src\AgenticAIOnWord.cpp" />
+    <ClCompile Include="src\cpp\AgenticAIOnWord.cpp" />
     <ClCompile Include="AgenticAIOnWord_i.c">
       <CompileAsManaged Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</CompileAsManaged>
       <CompileAsManaged Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</CompileAsManaged>
@@ -245,7 +249,7 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
       </PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="src\dllmain.cpp">
+    <ClCompile Include="src\cpp\dllmain.cpp">
       <CompileAsManaged Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</CompileAsManaged>
       <CompileAsManaged Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</CompileAsManaged>
       <CompileAsManaged Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</CompileAsManaged>
@@ -259,14 +263,16 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
       </PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="src\pch.cpp">
+    <ClCompile Include="src\cpp\pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="src\Connect.cpp" />
-    <ClCompile Include="src\TaskPaneControl.cpp" />
+    <ClCompile Include="src\cpp\Connect.cpp" />
+    <ClCompile Include="src\cpp\TaskPaneControl.cpp" />
+    <ClCompile Include="src\cpp\client\client.cpp" />
+    <ClCompile Include="third_party\nfd\src\nfd_win.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="res\AgenticAIOnWord.rc" />
