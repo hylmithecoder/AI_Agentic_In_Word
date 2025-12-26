@@ -5,6 +5,8 @@
 #include "client/client.hpp"
 #include "framework.h"
 #include "resource.h"
+#include <d2d1.h>
+#include <dwrite.h>
 #include <string>
 
 using namespace std;
@@ -124,6 +126,20 @@ private:
 
   // Helper to update file label text
   void UpdateFileLabel();
+
+  // Direct2D/DirectWrite initialization helpers
+  HRESULT InitD2DResources();
+  HRESULT CreateRenderTarget();
+
+  // Direct2D / DirectWrite
+  CComPtr<ID2D1Factory> m_d2dFactory;
+  CComPtr<IDWriteFactory> m_dwriteFactory;
+  CComPtr<ID2D1HwndRenderTarget> m_renderTarget;
+  CComPtr<IDWriteTextFormat> m_titleTextFormat;
+  CComPtr<IDWriteTextFormat> m_bodyTextFormat;
+  CComPtr<ID2D1SolidColorBrush> m_textBrush;
+  CComPtr<ID2D1SolidColorBrush> m_accentBrush;
+  CComPtr<ID2D1SolidColorBrush> m_bgBrush;
 };
 
 OBJECT_ENTRY_AUTO(CLSID_TaskPaneControl, CTaskPaneControl)

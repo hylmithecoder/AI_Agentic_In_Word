@@ -35,6 +35,10 @@ CConnect::OnConnection(IDispatch *Application,
               L"By Hylmi on https://hylmithecoder/AI_Agentic_In_Word",
               L"Add-in Info", MB_OK | MB_ICONINFORMATION);
 
+  if (client.ConnectToMCP()) {
+    MessageBoxW(NULL, L"Successfully Connected to MCP", L"Add-in Info",
+                MB_OK | MB_ICONINFORMATION);
+  }
   vector<string> filePathNames = client.getFilePath();
 
   wstring message = L"Selected files:\n\n";

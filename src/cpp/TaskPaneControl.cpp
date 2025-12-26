@@ -4,8 +4,23 @@
 #include "framework.h"
 #include "resource.h"
 #include <string>
+#include <wingdi.h>
 
-// Modern color scheme
+#pragma comment(lib, "d2d1.lib")
+#pragma comment(lib, "dwrite.lib")
+
+// Modern D2D color scheme
+namespace D2DColors {
+const D2D1_COLOR_F Background = {0.98f, 0.98f, 0.99f, 1.0f};
+const D2D1_COLOR_F AccentBlue = {0.0f, 0.47f, 0.84f, 1.0f};
+const D2D1_COLOR_F AccentLight = {0.90f, 0.94f, 0.98f, 1.0f};
+const D2D1_COLOR_F TextPrimary = {0.125f, 0.125f, 0.125f, 1.0f};
+const D2D1_COLOR_F TextSecondary = {0.4f, 0.4f, 0.4f, 1.0f};
+const D2D1_COLOR_F BorderLight = {0.86f, 0.86f, 0.88f, 1.0f};
+const D2D1_COLOR_F White = {1.0f, 1.0f, 1.0f, 1.0f};
+} // namespace D2DColors
+
+// GDI color scheme for child controls
 namespace Colors {
 const COLORREF Background = RGB(250, 250, 252);
 const COLORREF AccentBlue = RGB(0, 120, 215);
@@ -15,22 +30,129 @@ const COLORREF TextSecondary = RGB(100, 100, 100);
 const COLORREF BorderLight = RGB(220, 220, 225);
 } // namespace Colors
 
-// Drawing handler - paints the control background
+// Initialize Direct2D and DirectWrite resources
+HRESULT CTaskPaneControl::InitD2DResources() {
+  HRESULT hr = S_OK;
+
+  // Create D2D Factory
+  if (!m_d2dFactory) {
+    hr = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &m_d2dFactory);
+    if (FAILED(hr))
+      return hr;
+  }
+
+  // Create DirectWrite Factory
+  if (!m_dwriteFactory) {
+    hr = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED,
+                             __uuidof(IDWriteFactory),
+                             reinterpret_cast<IUnknown **>(&m_dwriteFactory));
+    if (FAILED(hr))
+      return hr;
+  }
+
+  // Create Title Text Format (Segoe UI Emoji for emoji support)
+  if (!m_titleTextFormat) {
+    hr = m_dwriteFactory->CreateTextFormat(
+        L"Segoe UI Emoji", // Font family (supports emojis)
+        nullptr,           // Font collection
+        DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_FONT_STYLE_NORMAL,
+        DWRITE_FONT_STRETCH_NORMAL,
+        20.0f, // Font size
+        L"",   // Locale
+        &m_titleTextFormat);
+    if (FAILED(hr))
+      return hr;
+
+    m_titleTextFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+    m_titleTextFormat->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+  }
+
+  // Create Body Text Format
+  if (!m_bodyTextFormat) {
+    hr = m_dwriteFactory->CreateTextFormat(
+        L"Segoe UI Emoji", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
+        DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 13.0f, L"",
+        &m_bodyTextFormat);
+    if (FAILED(hr))
+      return hr;
+
+    m_bodyTextFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+    m_bodyTextFormat->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
+    m_bodyTextFormat->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);
+  }
+
+  return hr;
+}
+
+// Create or recreate render target for the window
+HRESULT CTaskPaneControl::CreateRenderTarget() {
+  if (!m_d2dFactory)
+    return E_FAIL;
+
+  // Release existing render target
+  m_renderTarget.Release();
+  m_textBrush.Release();
+  m_accentBrush.Release();
+  m_bgBrush.Release();
+
+  RECT rc;
+  GetClientRect(&rc);
+
+  D2D1_SIZE_U size = D2D1::SizeU(rc.right - rc.left, rc.bottom - rc.top);
+
+  HRESULT hr = m_d2dFactory->CreateHwndRenderTarget(
+      D2D1::RenderTargetProperties(),
+      D2D1::HwndRenderTargetProperties(m_hWnd, size), &m_renderTarget);
+
+  if (SUCCEEDED(hr)) {
+    m_renderTarget->CreateSolidColorBrush(D2DColors::TextPrimary, &m_textBrush);
+    m_renderTarget->CreateSolidColorBrush(D2DColors::AccentBlue,
+                                          &m_accentBrush);
+    m_renderTarget->CreateSolidColorBrush(D2DColors::Background, &m_bgBrush);
+  }
+
+  return hr;
+}
+
+// Drawing handler - uses Direct2D for emoji-capable text rendering
 HRESULT CTaskPaneControl::OnDraw(ATL_DRAWINFO &di) {
   RECT &rc = *(RECT *)di.prcBounds;
-  HDC hdc = di.hdcDraw;
 
-  // Fill background with modern light color
-  HBRUSH hBrush = CreateSolidBrush(Colors::Background);
-  FillRect(hdc, &rc, hBrush);
-  DeleteObject(hBrush);
+  // Ensure D2D resources are created
+  if (!m_renderTarget) {
+    if (FAILED(CreateRenderTarget()))
+      return S_OK; // Fallback gracefully
+  }
+
+  // Check if render target is still valid
+  D2D1_SIZE_U targetSize = m_renderTarget->GetPixelSize();
+  UINT width = rc.right - rc.left;
+  UINT height = rc.bottom - rc.top;
+  if (targetSize.width != width || targetSize.height != height) {
+    m_renderTarget->Resize(D2D1::SizeU(width, height));
+  }
+
+  m_renderTarget->BeginDraw();
+
+  // Clear background
+  m_renderTarget->Clear(D2DColors::Background);
 
   // Draw accent header bar at top
-  RECT headerRect = rc;
-  headerRect.bottom = rc.top + 4;
-  HBRUSH hAccentBrush = CreateSolidBrush(Colors::AccentBlue);
-  FillRect(hdc, &headerRect, hAccentBrush);
-  DeleteObject(hAccentBrush);
+  D2D1_RECT_F headerRect = D2D1::RectF(0.0f, 0.0f, (FLOAT)width, 4.0f);
+  m_renderTarget->FillRectangle(headerRect, m_accentBrush);
+
+  // Draw title with emoji support 🤖
+  const wchar_t *title = L"🤖 Agentic AI Assistant";
+  D2D1_RECT_F titleRect = D2D1::RectF(12.0f, 16.0f, (FLOAT)(width - 12), 48.0f);
+  m_renderTarget->DrawText(title, (UINT32)wcslen(title), m_titleTextFormat,
+                           titleRect, m_accentBrush);
+
+  HRESULT hr = m_renderTarget->EndDraw();
+
+  // If the render target was lost, recreate it
+  if (hr == D2DERR_RECREATE_TARGET) {
+    CreateRenderTarget();
+  }
 
   return S_OK;
 }
@@ -43,50 +165,46 @@ LRESULT CTaskPaneControl::OnCreate(UINT uMsg, WPARAM wParam, LPARAM lParam,
   UNREFERENCED_PARAMETER(lParam);
   bHandled = TRUE;
 
-  // Create brushes
+  // Initialize Direct2D/DirectWrite
+  InitD2DResources();
+
+  // Create GDI brushes for child controls
   m_hBkBrush = CreateSolidBrush(Colors::Background);
   m_hAccentBrush = CreateSolidBrush(Colors::AccentLight);
 
-  // Create fonts
+  // Create fonts for child controls (Segoe UI Emoji for emoji support)
   m_hTitleFont =
       CreateFont(22, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
                  OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
-                 DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
+                 VARIABLE_PITCH, L"Segoe UI Emoji");
 
   m_hTextFont =
       CreateFont(14, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
                  OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
-                 DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
+                 VARIABLE_PITCH, L"Segoe UI Emoji");
 
   m_hBtnFont =
       CreateFont(13, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
                  OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
-                 DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
+                 VARIABLE_PITCH, L"Segoe UI");
 
   RECT rc;
   GetClientRect(&rc);
   int width = rc.right - rc.left - 24; // 12px padding on each side
   int xPos = 12;
-  int yPos = 16;
-
-  // ===== Title Section =====
-  m_wndTitleLabel.Create(
-      L"STATIC", m_hWnd, CRect(xPos, yPos, xPos + width, yPos + 28),
-      L"🤖 Agentic AI Assistant", WS_CHILD | WS_VISIBLE | SS_LEFT);
-  m_wndTitleLabel.SendMessage(WM_SETFONT, (WPARAM)m_hTitleFont, TRUE);
-  yPos += 40;
+  int yPos = 56; // Start after D2D-rendered title
 
   // ===== File Selection Section =====
   // File button (📁)
   m_wndFileButton.Create(
-      L"BUTTON", m_hWnd, CRect(xPos, yPos, xPos + 120, yPos + 32),
+      L"BUTTON", m_hWnd, CRect(xPos, yPos, xPos + 130, yPos + 32),
       L"📁 Select Files", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 0,
       IDC_FILE_BUTTON);
-  m_wndFileButton.SendMessage(WM_SETFONT, (WPARAM)m_hBtnFont, TRUE);
+  m_wndFileButton.SendMessage(WM_SETFONT, (WPARAM)m_hTextFont, TRUE);
 
   // File label (shows selected files)
   m_wndFileLabel.Create(
-      L"STATIC", m_hWnd, CRect(xPos + 130, yPos, xPos + width, yPos + 32),
+      L"STATIC", m_hWnd, CRect(xPos + 140, yPos, xPos + width, yPos + 32),
       L"No files selected", WS_CHILD | WS_VISIBLE | SS_LEFT | SS_PATHELLIPSIS);
   m_wndFileLabel.SendMessage(WM_SETFONT, (WPARAM)m_hTextFont, TRUE);
   yPos += 44;
@@ -95,7 +213,7 @@ LRESULT CTaskPaneControl::OnCreate(UINT uMsg, WPARAM wParam, LPARAM lParam,
   m_wndChatArea.Create(
       L"STATIC", m_hWnd, CRect(xPos, yPos, xPos + width, yPos + 180),
       L"💬 AI: Hello! I'm your Agentic AI assistant.\r\n\r\nI can help you "
-      L"with:\r\n• Editing documents\r\n• Answering questions\r\n• Code "
+      L"with:\r\n  • Editing documents\r\n  • Answering questions\r\n  • Code "
       L"analysis\r\n\r\nSelect a file and ask me anything!",
       WS_CHILD | WS_VISIBLE | SS_LEFT | WS_BORDER);
   m_wndChatArea.SendMessage(WM_SETFONT, (WPARAM)m_hTextFont, TRUE);
@@ -128,7 +246,7 @@ LRESULT CTaskPaneControl::OnCreate(UINT uMsg, WPARAM wParam, LPARAM lParam,
   return 0;
 }
 
-// Resize child controls when window is resized
+// Resize child controls and render target when window is resized
 LRESULT CTaskPaneControl::OnSize(UINT uMsg, WPARAM wParam, LPARAM lParam,
                                  BOOL &bHandled) {
   UNREFERENCED_PARAMETER(uMsg);
@@ -139,18 +257,18 @@ LRESULT CTaskPaneControl::OnSize(UINT uMsg, WPARAM wParam, LPARAM lParam,
   int clientHeight = HIWORD(lParam);
   int width = clientWidth - 24; // 12px padding on each side
   int xPos = 12;
-  int yPos = 16;
+  int yPos = 56; // After D2D-rendered title
 
-  if (m_wndTitleLabel.IsWindow()) {
-    m_wndTitleLabel.MoveWindow(xPos, yPos, width, 28);
-    yPos += 40;
+  // Resize render target if it exists
+  if (m_renderTarget) {
+    m_renderTarget->Resize(D2D1::SizeU(clientWidth, clientHeight));
   }
 
   if (m_wndFileButton.IsWindow()) {
-    m_wndFileButton.MoveWindow(xPos, yPos, 120, 32);
+    m_wndFileButton.MoveWindow(xPos, yPos, 130, 32);
   }
   if (m_wndFileLabel.IsWindow()) {
-    m_wndFileLabel.MoveWindow(xPos + 130, yPos, width - 130, 32);
+    m_wndFileLabel.MoveWindow(xPos + 140, yPos, width - 140, 32);
   }
   yPos += 44;
 
@@ -176,6 +294,9 @@ LRESULT CTaskPaneControl::OnSize(UINT uMsg, WPARAM wParam, LPARAM lParam,
     m_wndInfoLabel.MoveWindow(xPos, yPos, width, 20);
   }
 
+  // Invalidate to trigger redraw
+  InvalidateRect(NULL, TRUE);
+
   return 0;
 }
 
@@ -190,12 +311,8 @@ LRESULT CTaskPaneControl::OnCtlColorStatic(UINT uMsg, WPARAM wParam,
 
   SetBkColor(hdc, Colors::Background);
 
-  // Title gets primary color
-  if (hCtl == m_wndTitleLabel.m_hWnd) {
-    SetTextColor(hdc, Colors::AccentBlue);
-  }
-  // Info label gets secondary color
-  else if (hCtl == m_wndInfoLabel.m_hWnd || hCtl == m_wndFileLabel.m_hWnd) {
+  // Info label and file label get secondary color
+  if (hCtl == m_wndInfoLabel.m_hWnd || hCtl == m_wndFileLabel.m_hWnd) {
     SetTextColor(hdc, Colors::TextSecondary);
   }
   // Default text color
@@ -223,16 +340,15 @@ LRESULT CTaskPaneControl::OnCommand(UINT uMsg, WPARAM wParam, LPARAM lParam,
       bHandled = TRUE;
       return 0;
     } else if (ctrlId == IDC_SEND_BUTTON) {
-      // TODO: Handle send button click
-      // Get text from input edit
+      // Handle send button click
       int len = m_wndInputEdit.GetWindowTextLength();
       if (len > 0) {
         wchar_t *buffer = new wchar_t[len + 1];
         m_wndInputEdit.GetWindowText(buffer, len + 1);
 
         // For now, show a message box with the input
-        MessageBoxW(m_hWnd, buffer, L"Message Sent",
-                    MB_OK | MB_ICONINFORMATION);
+        ::MessageBoxW(m_hWnd, buffer, L"Message Sent",
+                      MB_OK | MB_ICONINFORMATION);
 
         // Clear input
         m_wndInputEdit.SetWindowText(L"");

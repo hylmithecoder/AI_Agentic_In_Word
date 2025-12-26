@@ -1,32 +1,284 @@
 #include "client/client.hpp"
+#include <sstream>
+#include <winhttp.h>
+
+#pragma comment(lib, "winhttp.lib")
 
 namespace MCPHelper {
 
+// WebSocket connection handles
+static HINTERNET hSession = NULL;
+static HINTERNET hConnect = NULL;
+static HINTERNET hRequest = NULL;
+static HINTERNET hWebSocket = NULL;
+
 bool MCPClient::ConnectToMCP() {
+  if (isConnected && hWebSocket != NULL) {
+    return true; // Already connected
+  }
+
+  // Initialize WinHTTP session
+  hSession = WinHttpOpen(L"AgenticAI/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+                         WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+
+  if (!hSession) {
+    DEBUG_LOG("WinHttpOpen failed: %lu", GetLastError());
+    return false;
+  }
+
+  // Connect to localhost:9910
+  hConnect = WinHttpConnect(hSession, L"localhost", 9910, 0);
+
+  if (!hConnect) {
+    DEBUG_LOG("WinHttpConnect failed: %lu", GetLastError());
+    WinHttpCloseHandle(hSession);
+    hSession = NULL;
+    return false;
+  }
+
+  // Create HTTP request for WebSocket upgrade
+  hRequest =
+      WinHttpOpenRequest(hConnect, L"GET", L"/", NULL, WINHTTP_NO_REFERER,
+                         WINHTTP_DEFAULT_ACCEPT_TYPES, 0);
+
+  if (!hRequest) {
+    DEBUG_LOG("WinHttpOpenRequest failed: %lu", GetLastError());
+    WinHttpCloseHandle(hConnect);
+    WinHttpCloseHandle(hSession);
+    hConnect = NULL;
+    hSession = NULL;
+    return false;
+  }
+
+  // Set WebSocket upgrade option
+  BOOL bResult =
+      WinHttpSetOption(hRequest, WINHTTP_OPTION_UPGRADE_TO_WEB_SOCKET, NULL, 0);
+
+  if (!bResult) {
+    DEBUG_LOG("WinHttpSetOption for WebSocket failed: %lu", GetLastError());
+    WinHttpCloseHandle(hRequest);
+    WinHttpCloseHandle(hConnect);
+    WinHttpCloseHandle(hSession);
+    hRequest = NULL;
+    hConnect = NULL;
+    hSession = NULL;
+    return false;
+  }
+
+  // Send the request
+  bResult = WinHttpSendRequest(hRequest, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
+                               WINHTTP_NO_REQUEST_DATA, 0, 0, 0);
+
+  if (!bResult) {
+    DEBUG_LOG("WinHttpSendRequest failed: %lu", GetLastError());
+    WinHttpCloseHandle(hRequest);
+    WinHttpCloseHandle(hConnect);
+    WinHttpCloseHandle(hSession);
+    hRequest = NULL;
+    hConnect = NULL;
+    hSession = NULL;
+    return false;
+  }
+
+  // Receive response
+  bResult = WinHttpReceiveResponse(hRequest, NULL);
+
+  if (!bResult) {
+    DEBUG_LOG("WinHttpReceiveResponse failed: %lu", GetLastError());
+    WinHttpCloseHandle(hRequest);
+    WinHttpCloseHandle(hConnect);
+    WinHttpCloseHandle(hSession);
+    hRequest = NULL;
+    hConnect = NULL;
+    hSession = NULL;
+    return false;
+  }
+
+  // Complete the WebSocket upgrade
+  hWebSocket = WinHttpWebSocketCompleteUpgrade(hRequest, NULL);
+
+  if (!hWebSocket) {
+    DEBUG_LOG("WinHttpWebSocketCompleteUpgrade failed: %lu", GetLastError());
+    WinHttpCloseHandle(hRequest);
+    WinHttpCloseHandle(hConnect);
+    WinHttpCloseHandle(hSession);
+    hRequest = NULL;
+    hConnect = NULL;
+    hSession = NULL;
+    return false;
+  }
+
+  // Close the request handle (no longer needed)
+  WinHttpCloseHandle(hRequest);
+  hRequest = NULL;
+
   isConnected = true;
+  DEBUG_LOG("WebSocket connected to ws://localhost:9910");
+
+  // Send health check
+  string healthJson = "{\"id\":\"1\",\"type\":\"health\"}";
+  DWORD dwError = WinHttpWebSocketSend(
+      hWebSocket, WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE,
+      (PVOID)healthJson.c_str(), (DWORD)healthJson.length());
+
+  if (dwError != ERROR_SUCCESS) {
+    DEBUG_LOG("Health check send failed: %lu", dwError);
+  } else {
+    DEBUG_LOG("Health check sent successfully");
+
+    // Receive response
+    char recvBuffer[4096];
+    DWORD dwBytesRead = 0;
+    WINHTTP_WEB_SOCKET_BUFFER_TYPE bufferType;
+
+    dwError =
+        WinHttpWebSocketReceive(hWebSocket, recvBuffer, sizeof(recvBuffer) - 1,
+                                &dwBytesRead, &bufferType);
+
+    if (dwError == ERROR_SUCCESS) {
+      recvBuffer[dwBytesRead] = '\0';
+      string response = string(recvBuffer);
+      wstring responseW = StringToWstring(response);
+      MessageBoxW(NULL, responseW.c_str(), L"Health Check Response",
+                  MB_OK | MB_ICONINFORMATION);
+      DEBUG_LOG("Health check response: %s", recvBuffer);
+    } else {
+      DEBUG_LOG("Health check receive failed: %lu", dwError);
+    }
+  }
+
   return true;
+}
+
+void MCPClient::Disconnect() {
+  if (hWebSocket) {
+    WinHttpWebSocketClose(hWebSocket, WINHTTP_WEB_SOCKET_SUCCESS_CLOSE_STATUS,
+                          NULL, 0);
+    WinHttpCloseHandle(hWebSocket);
+    hWebSocket = NULL;
+  }
+  if (hConnect) {
+    WinHttpCloseHandle(hConnect);
+    hConnect = NULL;
+  }
+  if (hSession) {
+    WinHttpCloseHandle(hSession);
+    hSession = NULL;
+  }
+  isConnected = false;
+}
+
+string MCPClient::SendMessage(const string &jsonMessage) {
+  if (!isConnected || !hWebSocket) {
+    DEBUG_LOG("Not connected to WebSocket");
+    return "{\"error\":\"Not connected\"}";
+  }
+
+  // Send message
+  DWORD dwError = WinHttpWebSocketSend(
+      hWebSocket, WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE,
+      (PVOID)jsonMessage.c_str(), (DWORD)jsonMessage.length());
+
+  if (dwError != ERROR_SUCCESS) {
+    DEBUG_LOG("WebSocket send failed: %lu", dwError);
+    return "{\"error\":\"Send failed\"}";
+  }
+
+  // Receive response
+  char recvBuffer[65536];
+  DWORD dwBytesRead = 0;
+  WINHTTP_WEB_SOCKET_BUFFER_TYPE bufferType;
+
+  dwError =
+      WinHttpWebSocketReceive(hWebSocket, recvBuffer, sizeof(recvBuffer) - 1,
+                              &dwBytesRead, &bufferType);
+
+  if (dwError != ERROR_SUCCESS) {
+    DEBUG_LOG("WebSocket receive failed: %lu", dwError);
+    return "{\"error\":\"Receive failed\"}";
+  }
+
+  recvBuffer[dwBytesRead] = '\0';
+  return string(recvBuffer);
+}
+
+void MCPClient::SendPrompt(const int &id, const string &prompt,
+                           const string &filePath) {
+  if (!isConnected) {
+    ConnectToMCP();
+  }
+
+  // Build JSON request
+  std::stringstream ss;
+  ss << "{\"id\":\"" << id << "\",\"type\":\"analyze\",\"prompt\":\"";
+
+  // Escape prompt for JSON
+  for (char c : prompt) {
+    switch (c) {
+    case '"':
+      ss << "\\\"";
+      break;
+    case '\\':
+      ss << "\\\\";
+      break;
+    case '\n':
+      ss << "\\n";
+      break;
+    case '\r':
+      ss << "\\r";
+      break;
+    case '\t':
+      ss << "\\t";
+      break;
+    default:
+      ss << c;
+      break;
+    }
+  }
+
+  ss << "\",\"file_path\":\"";
+
+  // Escape file path for JSON
+  for (char c : filePath) {
+    switch (c) {
+    case '"':
+      ss << "\\\"";
+      break;
+    case '\\':
+      ss << "\\\\";
+      break;
+    default:
+      ss << c;
+      break;
+    }
+  }
+
+  ss << "\"}";
+
+  string response = SendMessage(ss.str());
+  DEBUG_LOG("SendPrompt response: %s", response.c_str());
 }
 
 vector<string> MCPClient::getFilePath() {
   vector<string> currentPath;
-  NFD::UniquePathSet outPaths;
+  UniquePathSet outPaths;
 
   // prepare filters for the dialog
   nfdfilteritem_t filterItem[2] = {{"Source code", "c,cpp,cc"},
                                    {"Headers", "h,hpp"}};
 
   // show the dialog
-  nfdresult_t result = NFD::OpenDialogMultiple(outPaths, filterItem, 2);
+  nfdresult_t result = OpenDialogMultiple(outPaths, filterItem, 2);
   if (result == NFD_OKAY) {
     cout << "Success!" << endl;
 
     nfdpathsetsize_t numPaths;
-    NFD::PathSet::Count(outPaths, numPaths);
+    PathSet::Count(outPaths, numPaths);
 
     nfdpathsetsize_t i;
     for (i = 0; i < numPaths; ++i) {
-      NFD::UniquePathSetPath path;
-      NFD::PathSet::GetPath(outPaths, i, path);
+      UniquePathSetPath path;
+      PathSet::GetPath(outPaths, i, path);
       currentPath.push_back(path.get());
       cout << "Path " << i << ": " << path.get() << endl;
     }
@@ -34,7 +286,7 @@ vector<string> MCPClient::getFilePath() {
   } else if (result == NFD_CANCEL) {
     cout << "User pressed cancel." << endl;
   } else {
-    cout << "Error: " << NFD::GetError() << endl;
+    cout << "Error: " << GetError() << endl;
   }
   return currentPath;
 }
@@ -52,4 +304,5 @@ wstring MCPClient::StringToWstring(const string &str) {
 
   return wstr;
 }
+
 } // namespace MCPHelper
