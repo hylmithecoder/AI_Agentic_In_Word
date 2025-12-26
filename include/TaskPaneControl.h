@@ -75,6 +75,7 @@ public:
   MESSAGE_HANDLER(WM_CREATE, OnCreate)
   MESSAGE_HANDLER(WM_SIZE, OnSize)
   MESSAGE_HANDLER(WM_CTLCOLORSTATIC, OnCtlColorStatic)
+  MESSAGE_HANDLER(WM_COMMAND, OnCommand)
   DEFAULT_REFLECTION_HANDLER()
   END_MSG_MAP()
 
@@ -94,21 +95,35 @@ public:
   LRESULT OnSize(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL &bHandled);
   LRESULT OnCtlColorStatic(UINT uMsg, WPARAM wParam, LPARAM lParam,
                            BOOL &bHandled);
+  LRESULT OnCommand(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL &bHandled);
 
 private:
   MCPClient client;
+
   // Child controls
   CWindow m_wndTitleLabel;
   CWindow m_wndInfoLabel;
   CWindow m_wndActionButton;
   CWindow m_wndChatArea;
   CWindow m_wndSendButton;
-  HBRUSH m_hBkBrush = nullptr;
+  CWindow m_wndFileButton;
+  CWindow m_wndFileLabel;
+  CWindow m_wndInputEdit;
 
-  // Control IDs
-  static const int IDC_TITLE_LABEL = 1001;
-  static const int IDC_INFO_LABEL = 1002;
-  static const int IDC_ACTION_BUTTON = 1003;
+  // Background brushes
+  HBRUSH m_hBkBrush = nullptr;
+  HBRUSH m_hAccentBrush = nullptr;
+
+  // Fonts
+  HFONT m_hTitleFont = nullptr;
+  HFONT m_hTextFont = nullptr;
+  HFONT m_hBtnFont = nullptr;
+
+  // Selected file paths
+  vector<string> m_selectedFiles;
+
+  // Helper to update file label text
+  void UpdateFileLabel();
 };
 
 OBJECT_ENTRY_AUTO(CLSID_TaskPaneControl, CTaskPaneControl)

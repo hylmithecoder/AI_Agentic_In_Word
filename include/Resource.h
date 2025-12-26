@@ -8,6 +8,13 @@
 #define IDR_CONNECT 102
 #define IDR_TASKPANECONTROL 103
 #define ID_BTN_GET_STARTED 1001
+#define IDC_TITLE_LABEL 1002
+#define IDC_INFO_LABEL 1003
+#define IDC_CHAT_AREA 1004
+#define IDC_INPUT_EDIT 1005
+#define IDC_SEND_BUTTON 1006
+#define IDC_FILE_BUTTON 1007
+#define IDC_FILE_LABEL 1008
 
 // Next default values for new objects
 //
