@@ -283,10 +283,12 @@ pub const Server = struct {
             std.mem.eql(u8, msg_type, "review") or
             std.mem.eql(u8, msg_type, "refactor"))
         {
-            const file_path = if (root.get("file_path")) |v| v.string else null;
-            const content = if (root.get("content")) |v| v.string else null;
-            const prompt = if (root.get("prompt")) |v| v.string else null;
+            const file_path: []const u8 = if (root.get("file_path")) |v| v.string else "";
+            const currentFile: []const u8 = if (root.get("current_file")) |v| v.string else "";
+            const content: []const u8 = if (root.get("content")) |v| v.string else "";
+            const prompt: []const u8 = if (root.get("prompt")) |v| v.string else "";
 
+            try self.db.insertHistoryChat(prompt, file_path, "user", currentFile);
             try self.mcp_handler.processRequest(
                 self.allocator,
                 stream,
@@ -317,7 +319,6 @@ pub const Server = struct {
     fn handleGetHistory(self: *Self, stream: net.Stream) !void {
         var records = self.db.getTables() catch {
             try self.sendJsonResponse(stream, .{
-                // .id = id,
                 .status = "error",
                 .content = "Database error",
             });
@@ -325,39 +326,53 @@ pub const Server = struct {
         };
         defer self.db.freeHistory(&records);
 
-        // Build JSON response
-        var json_buf: [32768]u8 = undefined;
-        var fbs = std.io.fixedBufferStream(&json_buf);
-        const writer = fbs.writer();
+        // Use dynamic ArrayList instead of fixed buffer
+        var json_builder = try std.ArrayList(u8).initCapacity(self.allocator, 4096);
+        // defer json_builder.deinit();
 
-        try writer.writeAll("{\"id\":\"");
-        // try writer.writeAll(id);
-        try writer.writeAll("\",\"status\":\"ok\",\"data\":[");
+        try json_builder.appendSlice(self.allocator, "{\"id\":\"\",\"status\":\"ok\",\"data\":[");
 
-        for (records.items, 0..) |item, i| {
-            if (i > 0) try writer.writeAll(",");
-            try writer.writeAll("{\"uuid\":\"");
-            try writer.writeAll(item.uuid_str);
-            try writer.writeAll("\",\"message\":\"");
+        // Limit records to prevent excessive response size
+        const max_records: usize = 50;
+        const record_count = @min(records.items.len, max_records);
+
+        for (records.items[0..record_count], 0..) |item, i| {
+            if (i > 0) try json_builder.appendSlice(self.allocator, ",");
+            try json_builder.appendSlice(self.allocator, "{\"uuid\":\"");
+            try json_builder.appendSlice(self.allocator, item.uuid_str);
+            try json_builder.appendSlice(self.allocator, "\",\"message\":\"");
+
             // Escape message for JSON
             for (item.message) |ch| {
                 switch (ch) {
-                    '"' => try writer.writeAll("\\\""),
-                    '\\' => try writer.writeAll("\\\\"),
-                    '\n' => try writer.writeAll("\\n"),
-                    '\r' => try writer.writeAll("\\r"),
-                    '\t' => try writer.writeAll("\\t"),
-                    else => try writer.writeByte(ch),
+                    '"' => try json_builder.appendSlice(self.allocator, "\\\""),
+                    '\\' => try json_builder.appendSlice(self.allocator, "\\\\"),
+                    '\n' => try json_builder.appendSlice(self.allocator, "\\n"),
+                    '\r' => try json_builder.appendSlice(self.allocator, "\\r"),
+                    '\t' => try json_builder.appendSlice(self.allocator, "\\t"),
+                    else => {
+                        if (ch < 0x20) {
+                            // Skip control characters
+                        } else {
+                            try json_builder.append(self.allocator, ch);
+                        }
+                    },
                 }
             }
-            try writer.writeAll("\",\"timestamp\":\"");
-            try writer.writeAll(item.timestamp);
-            try writer.writeAll("\"}");
+
+            try json_builder.appendSlice(self.allocator, "\",\"timestamp\":\"");
+            try json_builder.appendSlice(self.allocator, item.timestamp);
+            try json_builder.appendSlice(self.allocator, "\",\"role\":\"");
+            try json_builder.appendSlice(self.allocator, item.role);
+            try json_builder.appendSlice(self.allocator, "\",\"current_file\":\"");
+            try json_builder.appendSlice(self.allocator, item.current_File);
+            try json_builder.appendSlice(self.allocator, "}");
         }
 
-        try writer.writeAll("]}");
+        try json_builder.appendSlice(self.allocator, "]}");
 
-        try self.sendFrame(stream, .text, fbs.getWritten());
+        std.debug.print("[WebSocket] History response size: {d} bytes\n", .{json_builder.items.len});
+        try self.sendFrame(stream, .text, json_builder.items);
     }
 
     /// Send JSON response helper

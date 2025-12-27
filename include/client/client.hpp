@@ -5,6 +5,7 @@
 #include <vector>
 #include <windows.h>
 #include <winhttp.h>
+#include <fstream>
 
 using namespace std;
 using namespace NFD;
@@ -33,6 +34,14 @@ public:
   // Send prompt to AI
   void SendPrompt(const int &id, const string &prompt, const string &filePath);
 
+  struct historyChat {
+    string message;
+    string timestamp;
+    string role;
+  };
+  vector<historyChat> historyChat;
+
+  void SetHistoryChat();
   // Helper function
   wstring StringToWstring(const string &str);
 };

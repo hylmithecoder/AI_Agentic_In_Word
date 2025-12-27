@@ -1,6 +1,7 @@
 const std = @import("std");
 const net = std.net;
 const Allocator = std.mem.Allocator;
+const database = @import("database/sqlitehandler.zig");
 
 const NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
 const NVIDIA_MODEL = "nvidia/nemotron-3-nano-30b-a3b";
@@ -11,11 +12,13 @@ pub const MCPHandler = struct {
 
     allocator: Allocator,
     api_token: []const u8,
+    db: *database.SqliteHandler,
 
-    pub fn init(allocator: Allocator, token: []const u8) Self {
+    pub fn init(allocator: Allocator, db: *database.SqliteHandler, token: []const u8) Self {
         return Self{
             .allocator = allocator,
             .api_token = token,
+            .db = db,
         };
     }
 
@@ -60,6 +63,7 @@ pub const MCPHandler = struct {
 
         // Build the AI prompt
         const prompt = try self.buildPrompt(allocator, request_type, file_path, file_content, user_prompt);
+
         defer allocator.free(prompt);
 
         // Send status update
@@ -211,7 +215,28 @@ pub const MCPHandler = struct {
         const body = response_writer_alloc.written();
 
         std.debug.print("[MCPHandler] Response received, length: {d}\n", .{body.len});
-        std.debug.print("[MCPHandler] {s}\n", .{body});
+
+        // Parse JSON to extract content for database
+        if (std.json.parseFromSlice(std.json.Value, self.allocator, body, .{})) |parsed| {
+            defer parsed.deinit();
+            const root = parsed.value.object;
+            if (root.get("choices")) |choices| {
+                if (choices.array.items.len > 0) {
+                    if (choices.array.items[0].object.get("message")) |message| {
+                        if (message.object.get("content")) |content_val| {
+                            const content = content_val.string;
+
+                            self.db.insertHistoryChat(content, "", "assistant", "") catch |err| {
+                                std.debug.print("[MCPHandler] Failed to save history: {}\n", .{err});
+                            };
+                        }
+                    }
+                }
+            }
+        } else |err| {
+            std.debug.print("[MCPHandler] JSON parse error for history: {}\n", .{err});
+        }
+
         // Process and send response to WebSocket
         try self.processResponse(allocator, stream, request_id, body);
     }

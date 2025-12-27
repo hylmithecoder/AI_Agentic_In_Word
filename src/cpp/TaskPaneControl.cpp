@@ -142,7 +142,7 @@ HRESULT CTaskPaneControl::OnDraw(ATL_DRAWINFO &di) {
   m_renderTarget->FillRectangle(headerRect, m_accentBrush);
 
   // Draw title with emoji support 🤖
-  const wchar_t *title = L"🤖 Agentic AI Assistant";
+  const wchar_t *title = L"\xD83E\xDD16 Agentic AI Assistant";
   D2D1_RECT_F titleRect = D2D1::RectF(12.0f, 16.0f, (FLOAT)(width - 12), 48.0f);
   m_renderTarget->DrawText(title, (UINT32)wcslen(title), m_titleTextFormat,
                            titleRect, m_accentBrush);
@@ -196,10 +196,11 @@ LRESULT CTaskPaneControl::OnCreate(UINT uMsg, WPARAM wParam, LPARAM lParam,
 
   // ===== File Selection Section =====
   // File button (📁)
-  m_wndFileButton.Create(
-      L"BUTTON", m_hWnd, CRect(xPos, yPos, xPos + 130, yPos + 32),
-      L"📁 Select Files", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 0,
-      IDC_FILE_BUTTON);
+  const wchar_t *fileButtonLabel = L"\xD83D\xDCC1 Select Files";
+  m_wndFileButton.Create(L"BUTTON", m_hWnd,
+                         CRect(xPos, yPos, xPos + 130, yPos + 32),
+                         fileButtonLabel, WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+                         0, IDC_FILE_BUTTON);
   m_wndFileButton.SendMessage(WM_SETFONT, (WPARAM)m_hTextFont, TRUE);
 
   // File label (shows selected files)
@@ -209,13 +210,16 @@ LRESULT CTaskPaneControl::OnCreate(UINT uMsg, WPARAM wParam, LPARAM lParam,
   m_wndFileLabel.SendMessage(WM_SETFONT, (WPARAM)m_hTextFont, TRUE);
   yPos += 44;
 
+  const wchar_t *helloMessage = L"\xD83D\xDCAC AI: Hello! I'm your Agentic AI "
+                                L"assistant.\r\n\r\nI can help you "
+                                L"with:\r\n  \x2022 Editing documents\r\n  "
+                                L"\x2022 Answering questions\r\n  \x2022 Code "
+                                L"analysis\r\n\r\nSelect a file and ask me "
+                                L"anything!";
   // ===== Chat Area Section =====
   m_wndChatArea.Create(
       L"STATIC", m_hWnd, CRect(xPos, yPos, xPos + width, yPos + 180),
-      L"💬 AI: Hello! I'm your Agentic AI assistant.\r\n\r\nI can help you "
-      L"with:\r\n  • Editing documents\r\n  • Answering questions\r\n  • Code "
-      L"analysis\r\n\r\nSelect a file and ask me anything!",
-      WS_CHILD | WS_VISIBLE | SS_LEFT | WS_BORDER);
+      helloMessage, WS_CHILD | WS_VISIBLE | SS_LEFT | WS_BORDER);
   m_wndChatArea.SendMessage(WM_SETFONT, (WPARAM)m_hTextFont, TRUE);
   yPos += 192;
 
@@ -229,18 +233,20 @@ LRESULT CTaskPaneControl::OnCreate(UINT uMsg, WPARAM wParam, LPARAM lParam,
   m_wndInputEdit.SendMessage(EM_SETCUEBANNER, TRUE,
                              (LPARAM)L"Type your message...");
 
+  const wchar_t *labelButton = L"Send \x27A4";
   // Send button
   m_wndSendButton.Create(
       L"BUTTON", m_hWnd,
-      CRect(xPos + width - 60, yPos, xPos + width, yPos + 60), L"Send ➤",
+      CRect(xPos + width - 60, yPos, xPos + width, yPos + 60), labelButton,
       WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 0, IDC_SEND_BUTTON);
   m_wndSendButton.SendMessage(WM_SETFONT, (WPARAM)m_hBtnFont, TRUE);
   yPos += 72;
 
+  const wchar_t *infoLabel = L"Powered by Agentic AI \x2022 v1.0";
   // ===== Info Label =====
-  m_wndInfoLabel.Create(
-      L"STATIC", m_hWnd, CRect(xPos, yPos, xPos + width, yPos + 20),
-      L"Powered by Agentic AI • v1.0", WS_CHILD | WS_VISIBLE | SS_CENTER);
+  m_wndInfoLabel.Create(L"STATIC", m_hWnd,
+                        CRect(xPos, yPos, xPos + width, yPos + 20), infoLabel,
+                        WS_CHILD | WS_VISIBLE | SS_CENTER);
   m_wndInfoLabel.SendMessage(WM_SETFONT, (WPARAM)m_hTextFont, TRUE);
 
   return 0;
@@ -347,8 +353,7 @@ LRESULT CTaskPaneControl::OnCommand(UINT uMsg, WPARAM wParam, LPARAM lParam,
         m_wndInputEdit.GetWindowText(buffer, len + 1);
 
         // For now, show a message box with the input
-        ::MessageBoxW(m_hWnd, buffer, L"Message Sent",
-                      MB_OK | MB_ICONINFORMATION);
+        ::MSGBOX_INFO(L"Agentic Extension", buffer);
 
         // Clear input
         m_wndInputEdit.SetWindowText(L"");

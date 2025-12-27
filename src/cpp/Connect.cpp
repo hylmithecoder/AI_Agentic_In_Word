@@ -30,15 +30,15 @@ CConnect::OnConnection(IDispatch *Application,
   // wstring databaseInfo = dbHelper.dbHelper->ShowTablesWString();
   // wstring rowsInfo = dbHelper.dbHelper->ShowRowsWString("history_chat");
   // Show a message box to confirm the add-in loaded (for debugging)
-  MessageBoxW(NULL,
+  MSGBOX_INFO(L"Agentic Extension",
               L"Agentic AI Add-in loaded successfully!\n This Project Created "
-              L"By Hylmi on https://hylmithecoder/AI_Agentic_In_Word",
-              L"Add-in Info", MB_OK | MB_ICONINFORMATION);
+              L"By Hylmi on https://hylmithecoder/AI_Agentic_In_Word");
 
   if (client.ConnectToMCP()) {
-    MessageBoxW(NULL, L"Successfully Connected to MCP", L"Add-in Info",
-                MB_OK | MB_ICONINFORMATION);
+    MSGBOX_INFO(L"Agentic Extension", L"Successfully Connected to MCP");
   }
+
+  client.SetHistoryChat();
   vector<string> filePathNames = client.getFilePath();
 
   wstring message = L"Selected files:\n\n";
@@ -48,14 +48,11 @@ CConnect::OnConnection(IDispatch *Application,
     message += L"\n";
   }
 
-  MessageBoxW(NULL, message.c_str(), L"File Picker Result",
-              MB_OK | MB_ICONINFORMATION);
+  MSGBOX_INFO(L"Agentic Extension", message);
 
-  // MessageBoxW(NULL, databaseInfo.c_str(), L"Database Info",
-  //             MB_OK | MB_ICONINFORMATION);
-
-  // MessageBoxW(NULL, rowsInfo.c_str(), L"Rows Info", MB_OK |
-  // MB_ICONINFORMATION);
+  // for (int i = 0; i < 10; i++) {
+  //   MSGBOX_INFO(L"Agentic Extension", to_wstring(i));
+  // }
 
   return S_OK;
 }

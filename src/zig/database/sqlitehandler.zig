@@ -9,6 +9,8 @@ pub const HistoryChat = struct {
     message: []const u8,
     timestamp: []const u8,
     file: []const u8,
+    role: []const u8,
+    current_File: []const u8,
 };
 
 /// Optimized SQLite handler using low-level C API
@@ -57,7 +59,9 @@ pub const SqliteHandler = struct {
             "uuid TEXT NOT NULL UNIQUE," ++
             "message TEXT NOT NULL," ++
             "timestamp TEXT NOT NULL," ++
-            "file TEXT DEFAULT '')";
+            "file TEXT DEFAULT ''," ++
+            "role VARCHAR(100) NOT NULL," ++
+            "current_File VARCHAR(255) NOT NULL )";
 
         var err_msg: [*c]u8 = null;
         const result = c.sqlite3_exec(self.db, create_sql, null, null, &err_msg);
@@ -104,14 +108,17 @@ pub const SqliteHandler = struct {
     }
 
     /// Insert a new chat message
-    pub fn insertHistoryChat(self: *Self, message: []const u8, file: []const u8) !void {
+    pub fn insertHistoryChat(self: *Self, message: []const u8, file: []const u8, role: []const u8, currentFile: []const u8) !void {
+        if (self.db == null) {
+            return error.SqliteNotInitialized;
+        }
         const uuid_str = generateUuid();
         const timestampstring: [19]u8 = getCurrentTimestampString();
         // const timestamp = getCurrentTimestamp();
 
         std.debug.print("Time Stamp string {s}", .{timestampstring});
         // std.debug.print("Time Stamp {d}", .{timestamp});
-        const insert_sql = "INSERT INTO history_chat (uuid, message, timestamp, file) VALUES (?, ?, ?, ?)";
+        const insert_sql = "INSERT INTO history_chat (uuid, message, timestamp, file, role, current_File) VALUES (?, ?, ?, ?, ?, ?)";
 
         var stmt: ?*c.sqlite3_stmt = null;
         var rc = c.sqlite3_prepare_v2(self.db, insert_sql, -1, &stmt, null);
@@ -126,6 +133,8 @@ pub const SqliteHandler = struct {
         _ = c.sqlite3_bind_text(stmt, 2, message.ptr, @intCast(message.len), null);
         _ = c.sqlite3_bind_text(stmt, 3, &timestampstring, 19, null);
         _ = c.sqlite3_bind_text(stmt, 4, file.ptr, @intCast(file.len), null);
+        _ = c.sqlite3_bind_text(stmt, 5, role.ptr, @intCast(role.len), null);
+        _ = c.sqlite3_bind_text(stmt, 6, currentFile.ptr, @intCast(file.len), null);
 
         rc = c.sqlite3_step(stmt);
         if (rc != c.SQLITE_DONE) {
@@ -180,6 +189,12 @@ pub const SqliteHandler = struct {
             const file_ptr = c.sqlite3_column_text(stmt, 4);
             const file_len: usize = @intCast(c.sqlite3_column_bytes(stmt, 4));
 
+            const role_ptr = c.sqlite3_column_text(stmt, 5);
+            const role_len: usize = @intCast(c.sqlite3_column_bytes(stmt, 5));
+
+            const currentFile_ptr = c.sqlite3_column_text(stmt, 6);
+            const currentFile_len: usize = @intCast(c.sqlite3_column_bytes(stmt, 6));
+
             // Copy strings to owned memory
             const uuid_copy = try self.allocator.alloc(u8, uuid_len);
             if (uuid_ptr != null) {
@@ -201,12 +216,24 @@ pub const SqliteHandler = struct {
                 @memcpy(file_copy, file_ptr[0..file_len]);
             }
 
+            const role_copy = try self.allocator.alloc(u8, role_len);
+            if (role_ptr != null) {
+                @memcpy(role_copy, role_ptr[0..role_len]);
+            }
+
+            const currentFile_copy = try self.allocator.alloc(u8, currentFile_len);
+            if (currentFile_ptr != null) {
+                @memcpy(currentFile_copy, currentFile_ptr[0..currentFile_len]);
+            }
+
             try results.append(self.allocator, .{
                 .id = id,
                 .uuid_str = uuid_copy,
                 .message = msg_copy,
                 .timestamp = ts_copy,
                 .file = file_copy,
+                .role = role_copy,
+                .current_File = currentFile_copy,
             });
         }
 

@@ -26,13 +26,13 @@ pub fn main() !void {
 
     print("[Server] NVIDIA API token loaded ({d} chars)\n", .{nvidia_token.len});
 
-    // Initialize MCP handler
-    var mcp_handler = AgenticAIOnWord.mcp.MCPHandler.init(allocator, nvidia_token);
-    defer mcp_handler.deinit();
-
     // Initialize database
     var db = try AgenticAIOnWord.database.SqliteHandler.init(allocator, "ms_word.db");
     defer db.deinit();
+
+    // Initialize MCP handler
+    var mcp_handler = AgenticAIOnWord.mcp.MCPHandler.init(allocator, &db, nvidia_token);
+    defer mcp_handler.deinit();
 
     // Start WebSocket server
     try AgenticAIOnWord.server.startServer(allocator, &db, &mcp_handler, SERVER_PORT);

@@ -1,4 +1,5 @@
 #include "client/client.hpp"
+#include "debugger.hpp"
 #include <sstream>
 #include <winhttp.h>
 
@@ -139,8 +140,7 @@ bool MCPClient::ConnectToMCP() {
       recvBuffer[dwBytesRead] = '\0';
       string response = string(recvBuffer);
       wstring responseW = StringToWstring(response);
-      MessageBoxW(NULL, responseW.c_str(), L"Health Check Response",
-                  MB_OK | MB_ICONINFORMATION);
+      MSGBOX_INFO(L"[MCPHandler]", L"Health check response: " + responseW);
       DEBUG_LOG("Health check response: %s", recvBuffer);
     } else {
       DEBUG_LOG("Health check receive failed: %lu", dwError);
@@ -170,7 +170,7 @@ void MCPClient::Disconnect() {
 
 string MCPClient::SendMessage(const string &jsonMessage) {
   if (!isConnected || !hWebSocket) {
-    DEBUG_LOG("Not connected to WebSocket");
+    MSGBOX_ERROR(L"Not connected to WebSocket", L"Agentic Extension");
     return "{\"error\":\"Not connected\"}";
   }
 
@@ -180,7 +180,7 @@ string MCPClient::SendMessage(const string &jsonMessage) {
       (PVOID)jsonMessage.c_str(), (DWORD)jsonMessage.length());
 
   if (dwError != ERROR_SUCCESS) {
-    DEBUG_LOG("WebSocket send failed: %lu", dwError);
+    MSGBOX_ERROR(L"WebSocket send failed", L"Agentic Extension");
     return "{\"error\":\"Send failed\"}";
   }
 
@@ -194,6 +194,8 @@ string MCPClient::SendMessage(const string &jsonMessage) {
                               &dwBytesRead, &bufferType);
 
   if (dwError != ERROR_SUCCESS) {
+    MSGBOX_ERRORF(L"Agentic Extension", L"WebSocket receive failed: %lu",
+                  dwError);
     DEBUG_LOG("WebSocket receive failed: %lu", dwError);
     return "{\"error\":\"Receive failed\"}";
   }
@@ -256,7 +258,8 @@ void MCPClient::SendPrompt(const int &id, const string &prompt,
   ss << "\"}";
 
   string response = SendMessage(ss.str());
-  DEBUG_LOG("SendPrompt response: %s", response.c_str());
+  MSGBOX_INFOF(L"Agentic Extension", L"SendPrompt response: %s",
+               response.c_str());
 }
 
 vector<string> MCPClient::getFilePath() {
@@ -303,6 +306,35 @@ wstring MCPClient::StringToWstring(const string &str) {
                       sizeNeeded);
 
   return wstr;
+}
+
+void MCPClient::SetHistoryChat() {
+  if (!isConnected) {
+    MSGBOX_ERROR(L"Not connected to WebSocket", L"Agentic Extension");
+    return;
+  }
+
+  string response = SendMessage("{\"id\":\"1\",\"type\":\"history\"}");
+  ofstream his("history.json");
+  if (!his.is_open()) {
+    std::cerr << "Error: Unable to open the file for writing." << std::endl;
+    return;
+  }
+
+  // 3. Write data to the file using the stream insertion operator (<<)
+  his << response << std::endl;
+
+  // 4. Close the file stream
+  // It's good practice to close the file when you're done.
+  his.close();
+
+  MSGBOX_INFO(L"Agentic Extension",
+              L"SetHistoryChat response: " + StringToWstring(response));
+  string responseJsonParsed = "";
+  for (char responseChar : response) {
+    responseJsonParsed += responseChar;
+  }
+  // history_chat.push_back(StringToWstring(responseJsonParsed));
 }
 
 } // namespace MCPHelper
