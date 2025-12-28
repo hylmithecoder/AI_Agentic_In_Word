@@ -3,9 +3,12 @@
 #include "../../third_party/nlohmann/json.hpp"
 #include "../debugger.hpp"
 #include <OleAuto.h>
+#include <chrono>
+#include <cwctype>
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 #include <windows.h>
 #include <winhttp.h>
@@ -66,6 +69,20 @@ public:
   void StreamByWords(const wstring &message);
   void StreamByLines(const wstring &message);
 
+  // Markdown Parsing Helpers
+  void ProcessStreamChunk(const wstring &chunk);
+  void ParseMarkdown(const wstring &text);
+  void ProcessTableBuffer();
+  void CollectDocumentInfo(json &requestJson);
+
+  // Markdown State
+  bool isBoldMode = false;
+  bool isItalicMode = false;
+  bool isUnderlineMode = false;
+  wstring pendingBuffer;       // buffer for incomplete tokens like * or #
+  vector<wstring> tableBuffer; // buffer for table rows
+  bool isTableMode = false;
+
 private:
   // Cached COM objects for better performance
   struct StreamContext {
@@ -77,6 +94,9 @@ private:
 
   StreamContext InitStreamContext();
   void WriteWithContext(StreamContext &ctx, const wstring &text);
+  void WriteBold(const wstring &text);
+  void WriteHeader(const wstring &text);
+  void CreateTableFromBuffer();
   void CleanupStreamContext(StreamContext &ctx);
 
   using StreamCallback = function<void(const string &)>;

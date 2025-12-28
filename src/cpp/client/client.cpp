@@ -363,7 +363,7 @@ void MCPClient::SendPrompt(const int &id, const string &prompt,
   }
 
   // Build JSON request using nlohmann/json
-  json requestJson = {{"id", std::to_string(id)},
+  json requestJson = {{"id", to_string(id)},
                       {"type", "analyze"},
                       {"prompt", prompt},
                       {"file_path", filePath},
@@ -416,7 +416,10 @@ void MCPClient::SendPromptWithStream(const int &id, const string &prompt,
                       {"prompt", prompt},
                       {"file_path", filePath},
                       {"current_file", currentFile},
-                      {"isStream", true}};
+                      {"isStream", true}}; // Enable streaming
+
+  // Collect detailed document context (font, pages, etc.)
+  CollectDocumentInfo(requestJson);
 
   string jsonRequest = requestJson.dump();
 
@@ -444,7 +447,20 @@ void MCPClient::SendPromptWithStream(const int &id, const string &prompt,
   WINHTTP_WEB_SOCKET_BUFFER_TYPE bufferType;
   bool streamComplete = false;
 
+  // Reset state
+  isBoldMode = false;
+  isTableMode = false;
+  pendingBuffer.clear();
+  tableBuffer.clear();
+
   while (!streamComplete) {
+    // Message Pump to keep UI responsive
+    MSG msg;
+    while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
+      TranslateMessage(&msg);
+      DispatchMessage(&msg);
+    }
+
     // Receive a WebSocket message
     string fullMessage;
 
@@ -480,15 +496,25 @@ void MCPClient::SendPromptWithStream(const int &id, const string &prompt,
             string contentChunk = responseJson["content"].get<string>();
             wstring wChunk = StringToWstring(contentChunk);
 
-            // Write chunk directly to Word document
-            Stream(wChunk);
+            // Process chunk with Markdown parser
+            ProcessStreamChunk(wChunk);
 
             // Accumulate for history
             accumulatedContent += contentChunk;
           }
         } else if (status == "complete") {
+          // Process any remaining buffer
+          if (!pendingBuffer.empty()) {
+            Stream(pendingBuffer);
+            pendingBuffer.clear();
+          }
+          if (isTableMode) {
+            CreateTableFromBuffer();
+          }
+
           // Streaming is complete
           streamComplete = true;
+          SetHistoryChat();
           DEBUG_LOG("Stream completed");
         } else if (status == "error") {
           // Handle error
@@ -605,7 +631,7 @@ void MCPClient::SetHistoryChat() {
   // Save to file for debugging
   ofstream his("history.json");
   if (his.is_open()) {
-    his << response << std::endl;
+    his << response << endl;
     his.close();
   }
 
@@ -698,4 +724,191 @@ void MCPClient::SetHistoryChat() {
   // MSGBOX_INFO(L"Loaded " + to_wstring(historyChat.size()) +
   //             L" history entries");
 }
+
+void MCPClient::ProcessStreamChunk(const wstring &chunk) {
+  // Combine pending buffer with new chunk
+  wstring text = pendingBuffer + chunk;
+  pendingBuffer.clear();
+
+  size_t processed = 0;
+
+  // If we are in table mode, we need to handle line by line
+  if (isTableMode) {
+    size_t pos = 0;
+    while (pos < text.length()) {
+      size_t newline = text.find(L'\n', pos);
+      if (newline == wstring::npos) {
+        // Incomplete line, save to buffer
+        pendingBuffer = text.substr(pos);
+        processed = text.length();
+        break;
+      }
+
+      wstring line = text.substr(pos, newline - pos + 1); // include newline
+
+      // Check if line looks like a table row
+      wstring trimmed = line;
+      // Simple trim for check
+      while (!trimmed.empty() && iswspace(trimmed.back()))
+        trimmed.pop_back();
+      while (!trimmed.empty() && iswspace(trimmed.front()))
+        trimmed.erase(0, 1);
+
+      if (!trimmed.empty() && trimmed.front() == L'|') {
+        tableBuffer.push_back(line);
+      } else if (!trimmed.empty()) {
+        // End of table
+        CreateTableFromBuffer();
+        ParseMarkdown(line);
+      } else {
+        // Empty line, could be end of table or just spacing?
+        if (!tableBuffer.empty()) {
+          CreateTableFromBuffer();
+        }
+        Stream(line);
+      }
+
+      pos = newline + 1;
+      processed = pos;
+    }
+    return;
+  }
+
+  // Not in table mode, normal parsing
+  ParseMarkdown(text);
+}
+
+void MCPClient::ParseMarkdown(const wstring &text) {
+  // If text starts with '|', and we are not in table mode, start table mode
+  wstring trimmed = text;
+  while (!trimmed.empty() && iswspace(trimmed.back()))
+    trimmed.pop_back();
+  while (!trimmed.empty() && iswspace(trimmed.front()))
+    trimmed.erase(0, 1);
+
+  if (!isTableMode && !trimmed.empty() && trimmed.front() == L'|') {
+    isTableMode = true;
+    tableBuffer.push_back(text);
+    return;
+  }
+
+  size_t i = 0;
+  while (i < text.length()) {
+    // Toggle Bold on "**"
+    if (i + 1 < text.length() && text[i] == L'*' && text[i + 1] == L'*') {
+      isBoldMode = !isBoldMode;
+      i += 2;
+      continue;
+    }
+
+    // Toggle Underline on "__"
+    if (i + 1 < text.length() && text[i] == L'_' && text[i + 1] == L'_') {
+      isUnderlineMode = !isUnderlineMode;
+      i += 2;
+      continue;
+    }
+
+    // Toggle Italic on "_" (if not double)
+    if (text[i] == L'_') {
+      isItalicMode = !isItalicMode;
+      i++;
+      continue;
+    }
+
+    // Handle Header "## "
+    if (i + 2 < text.length() && text[i] == L'#' && text[i + 1] == L'#' &&
+        text[i + 2] == L' ') {
+      WriteHeader(L"");
+      Stream(L"\n");
+      i += 3;
+      isBoldMode = true;
+      continue;
+    }
+
+    // Buffer standard text until next token
+    size_t start = i;
+    while (i < text.length()) {
+      if (i + 1 < text.length() && text[i] == L'*' && text[i + 1] == L'*')
+        break;
+      if (i + 1 < text.length() && text[i] == L'_' && text[i + 1] == L'_')
+        break;
+      if (text[i] == L'_')
+        break;
+      if (i + 2 < text.length() && text[i] == L'#' && text[i + 1] == L'#' &&
+          text[i + 2] == L' ')
+        break;
+      i++;
+    }
+
+    wstring sub = text.substr(start, i - start);
+    // Apply formatting (simulated via Stream for now)
+    // In real implementation we would set Selection.Font properties here
+    Stream(sub);
+  }
+}
+
+void MCPClient::WriteBold(const wstring &text) { Stream(text); }
+
+void MCPClient::WriteHeader(const wstring &text) { Stream(L"\n"); }
+
+void MCPClient::CreateTableFromBuffer() {
+  isTableMode = false;
+  if (tableBuffer.empty())
+    return;
+
+  Stream(L"\n");
+  for (const auto &line : tableBuffer) {
+    Stream(line);
+  }
+  tableBuffer.clear();
+}
+
+void MCPClient::CollectDocumentInfo(json &requestJson) {
+  if (!s_pWordApp)
+    return;
+
+  // Collect Active Document Name
+  {
+    DISPID dispid;
+    OLECHAR *szMember = (OLECHAR *)L"ActiveDocument";
+    HRESULT hr = s_pWordApp->GetIDsOfNames(IID_NULL, &szMember, 1,
+                                           LOCALE_USER_DEFAULT, &dispid);
+    if (SUCCEEDED(hr)) {
+      DISPPARAMS dp = {NULL, NULL, 0, 0};
+      VARIANT result;
+      VariantInit(&result);
+      hr = s_pWordApp->Invoke(dispid, IID_NULL, LOCALE_USER_DEFAULT,
+                              DISPATCH_PROPERTYGET, &dp, &result, NULL, NULL);
+      if (SUCCEEDED(hr) && result.pdispVal) {
+        IDispatch *pDoc = result.pdispVal;
+
+        // Get Name
+        szMember = (OLECHAR *)L"Name";
+        hr = pDoc->GetIDsOfNames(IID_NULL, &szMember, 1, LOCALE_USER_DEFAULT,
+                                 &dispid);
+        if (SUCCEEDED(hr)) {
+          VARIANT nameRes;
+          VariantInit(&nameRes);
+          pDoc->Invoke(dispid, IID_NULL, LOCALE_USER_DEFAULT,
+                       DISPATCH_PROPERTYGET, &dp, &nameRes, NULL, NULL);
+          if (nameRes.vt == VT_BSTR) {
+            requestJson["active_document"] = WstringToString(nameRes.bstrVal);
+            wstring space = L"\n";
+            MSGBOX_INFO(szMember + space + StringToWstring(requestJson.dump()));
+          }
+          VariantClear(&nameRes);
+        }
+
+        // Get Page Count (ComputeStatistics(2) = wdStatisticPages)
+        // This is expensive, maybe skip or use simpler property?
+        // Information(wdNumberOfPagesInDocument) (wdNumberOfPagesInDocument =
+        // 4) on Selection/Range
+
+        pDoc->Release();
+      }
+      VariantClear(&result);
+    }
+  }
+}
+
 } // namespace MCPHelper
