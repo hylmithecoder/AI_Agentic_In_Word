@@ -2,7 +2,9 @@
 #include "../../third_party/nfd/include/nfd.hpp"
 #include "../../third_party/nlohmann/json.hpp"
 #include "../debugger.hpp"
+#include <OleAuto.h>
 #include <fstream>
+#include <sstream>
 #include <string>
 #include <vector>
 #include <windows.h>
@@ -43,6 +45,10 @@ public:
   void SendPrompt(const int &id, const string &prompt, const string &filePath,
                   const string &currentFile);
 
+  // Send prompt with streaming response
+  void SendPromptWithStream(const int &id, const string &prompt,
+                            const string &filePath, const string &currentFile);
+
   struct historyChat {
     string message;
     string timestamp;
@@ -55,7 +61,31 @@ public:
   wstring StringToWstring(const string &str);
   string WstringToString(const wstring &str);
 
-  void WriteNonStream(const wstring &message);
+  void Write(const wstring &message);
+  void Stream(const wstring &message);
+  void StreamByWords(const wstring &message);
+  void StreamByLines(const wstring &message);
+
+private:
+  // Cached COM objects for better performance
+  struct StreamContext {
+    IDispatch *pDoc = nullptr;
+    IDispatch *pRange = nullptr;
+    DISPID insertAfterDispId = 0;
+    bool isValid = false;
+  };
+
+  StreamContext InitStreamContext();
+  void WriteWithContext(StreamContext &ctx, const wstring &text);
+  void CleanupStreamContext(StreamContext &ctx);
+
+  using StreamCallback = function<void(const string &)>;
+
+  string ExtractJsonString(const string &json, size_t start, size_t end);
+  // string SendMessageToWebsocketWithStream(const string &message,
+  //                                         StreamCallback callback);
+  void StreamChunked(const wstring &message);
+  vector<wstring> SplitIntoChunks(const wstring &text, size_t chunkSize);
 };
 
 } // namespace MCPHelper

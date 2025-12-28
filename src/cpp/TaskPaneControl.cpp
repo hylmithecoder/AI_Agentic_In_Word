@@ -368,14 +368,19 @@ LRESULT CTaskPaneControl::OnCommand(UINT uMsg, WPARAM wParam, LPARAM lParam,
         string formattedInput = currentDocument + "\n";
         formattedInput += client.WstringToString(buffer) + "\n";
         formattedInput += m_selectedFiles[0];
-        ::MSGBOX_INFO(client.StringToWstring(formattedInput));
+        // ::MSGBOX_INFO(client.StringToWstring(formattedInput));
         string selectedFiles = "";
         if (m_selectedFiles[0] != "") {
           selectedFiles = m_selectedFiles[0];
         }
-        client.SendPrompt(1, client.WstringToString(buffer), selectedFiles,
-                          currentDocument);
-        // Clear input
+
+        if (selectedFiles == "") {
+          MSGBOX_WARNING(L"File Tidak boleh kosong");
+          return 0;
+        }
+        client.SendPromptWithStream(1, client.WstringToString(buffer),
+                                    selectedFiles, currentDocument);
+        // // Clear input
         m_wndInputEdit.SetWindowText(L"");
         delete[] buffer;
       }

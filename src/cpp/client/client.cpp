@@ -379,8 +379,16 @@ void MCPClient::SendPrompt(const int &id, const string &prompt,
     // Extract content field
     if (responseJson.contains("content")) {
       string content = responseJson["content"].get<string>();
-      WriteNonStream(StringToWstring(content));
-      MSGBOX_INFO(L"AI Response:\n" + StringToWstring(content));
+      wstring wContent = StringToWstring(content);
+
+      // Split by sentences for more natural streaming
+      vector<wstring> chunks = SplitIntoChunks(wContent, 100);
+
+      // Stream each chunk
+      for (const auto &chunk : chunks) {
+        Stream(chunk);
+        Sleep(100); // Delay between sentences
+      }
     } else if (responseJson.contains("error")) {
       string error = responseJson["error"].get<string>();
       MSGBOX_WARNING(L"Error: " + StringToWstring(error));
@@ -390,6 +398,132 @@ void MCPClient::SendPrompt(const int &id, const string &prompt,
 
   } catch (json::exception &e) {
     MSGBOX_WARNING(L"Failed to parse JSON: " + StringToWstring(e.what()));
+  }
+
+  SetHistoryChat();
+}
+
+void MCPClient::SendPromptWithStream(const int &id, const string &prompt,
+                                     const string &filePath,
+                                     const string &currentFile) {
+  if (!isConnected) {
+    ConnectToMCP();
+  }
+
+  // Build JSON request with isStream: true
+  json requestJson = {{"id", std::to_string(id)},
+                      {"type", "explain"},
+                      {"prompt", prompt},
+                      {"file_path", filePath},
+                      {"current_file", currentFile},
+                      {"isStream", true}};
+
+  string jsonRequest = requestJson.dump();
+
+  // Send the request
+  if (!isConnected || hWebSocket == NULL) {
+    MSGBOX_ERROR(L"Not connected to WebSocket");
+    return;
+  }
+
+  DWORD dwError = WinHttpWebSocketSend(
+      hWebSocket, WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE,
+      (PVOID)jsonRequest.c_str(), (DWORD)jsonRequest.length());
+
+  if (dwError != ERROR_SUCCESS) {
+    MSGBOX_ERROR(L"WebSocket send failed");
+    return;
+  }
+
+  DEBUG_LOG("Streaming request sent: %s", jsonRequest.c_str());
+
+  // Receive streaming responses until complete
+  string accumulatedContent;
+  char recvBuffer[8192];
+  DWORD dwBytesRead = 0;
+  WINHTTP_WEB_SOCKET_BUFFER_TYPE bufferType;
+  bool streamComplete = false;
+
+  while (!streamComplete) {
+    // Receive a WebSocket message
+    string fullMessage;
+
+    do {
+      dwError = WinHttpWebSocketReceive(hWebSocket, recvBuffer,
+                                        sizeof(recvBuffer) - 1, &dwBytesRead,
+                                        &bufferType);
+
+      if (dwError != ERROR_SUCCESS) {
+        DEBUG_LOG("WebSocket receive failed: %lu", dwError);
+        MSGBOX_ERRORF(L"Agentic Extension", L"Stream receive failed %lu",
+                      dwError);
+        return;
+      }
+
+      recvBuffer[dwBytesRead] = '\0';
+      fullMessage.append(recvBuffer, dwBytesRead);
+
+    } while (bufferType == WINHTTP_WEB_SOCKET_UTF8_FRAGMENT_BUFFER_TYPE ||
+             bufferType == WINHTTP_WEB_SOCKET_BINARY_FRAGMENT_BUFFER_TYPE);
+
+    // Parse the received JSON message
+    try {
+      json responseJson = json::parse(fullMessage);
+
+      // Check for status field
+      if (responseJson.contains("status")) {
+        string status = responseJson["status"].get<string>();
+
+        if (status == "streaming") {
+          // Extract and stream the content chunk
+          if (responseJson.contains("content")) {
+            string contentChunk = responseJson["content"].get<string>();
+            wstring wChunk = StringToWstring(contentChunk);
+
+            // Write chunk directly to Word document
+            Stream(wChunk);
+
+            // Accumulate for history
+            accumulatedContent += contentChunk;
+          }
+        } else if (status == "complete") {
+          // Streaming is complete
+          streamComplete = true;
+          DEBUG_LOG("Stream completed");
+        } else if (status == "error") {
+          // Handle error
+          string errorMsg = responseJson.contains("content")
+                                ? responseJson["content"].get<string>()
+                                : "Unknown error";
+          MSGBOX_WARNING(L"Streaming error: " + StringToWstring(errorMsg));
+          streamComplete = true;
+        }
+      } else if (responseJson.contains("success")) {
+        // Non-streaming response format (fallback)
+        if (responseJson["success"].get<bool>()) {
+          if (responseJson.contains("content")) {
+            string content = responseJson["content"].get<string>();
+            wstring wContent = StringToWstring(content);
+
+            vector<wstring> chunks = SplitIntoChunks(wContent, 100);
+            for (const auto &chunk : chunks) {
+              Stream(chunk);
+              Sleep(50);
+            }
+          }
+        } else if (responseJson.contains("error")) {
+          string error = responseJson["error"].get<string>();
+          MSGBOX_WARNING(L"Error: " + StringToWstring(error));
+        }
+        streamComplete = true;
+      }
+
+    } catch (json::exception &e) {
+      MSGBOX_ERROR(L"Json parse error during streaming: " +
+                   StringToWstring(e.what()));
+      DEBUG_LOG("JSON parse error during streaming: %s", e.what());
+      // Continue receiving - might be partial data
+    }
   }
 
   SetHistoryChat();
@@ -561,7 +695,7 @@ void MCPClient::SetHistoryChat() {
     }
   }
 
-  MSGBOX_INFO(L"Loaded " + to_wstring(historyChat.size()) +
-              L" history entries");
+  // MSGBOX_INFO(L"Loaded " + to_wstring(historyChat.size()) +
+  //             L" history entries");
 }
 } // namespace MCPHelper

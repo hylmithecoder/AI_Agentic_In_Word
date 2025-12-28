@@ -37,6 +37,7 @@ pub const MCPHandler = struct {
         file_path: []const u8,
         content: ?[]const u8,
         user_prompt: ?[]const u8,
+        isStream: ?bool,
     ) !void {
         std.debug.print("[MCPHandler] Processing {s} request for path: {s}\n and content {s}", .{ request_type, file_path, content orelse "none" });
 
@@ -70,7 +71,7 @@ pub const MCPHandler = struct {
         // try self.sendStatus(stream, id, "processing", "Sending request to NVIDIA AI...");
 
         // Call NVIDIA API
-        self.callNvidiaAPI(allocator, stream, id, prompt) catch |err| {
+        self.callNvidiaAPI(allocator, stream, id, prompt, isStream) catch |err| {
             try self.sendError(stream, id, "NVIDIA API call failed", err);
             return;
         };
@@ -163,10 +164,103 @@ pub const MCPHandler = struct {
         stream: net.Stream,
         request_id: []const u8,
         prompt: []const u8,
+        isStream: ?bool,
     ) !void {
         // Build request body
-        const request_body = try self.buildRequestBody(allocator, prompt);
+        const use_stream = isStream orelse false;
+        const request_body = try self.buildRequestBody(allocator, prompt, use_stream);
         defer allocator.free(request_body);
+
+        // Handle streaming mode
+        if (use_stream) {
+            std.debug.print("[MCPHandler] Streaming request body length: {d}\n", .{request_body.len});
+            var responseMessage = try std.ArrayList(u8).initCapacity(allocator, request_body.len + 256);
+            defer responseMessage.deinit(allocator); // free when we’re done
+            // Build authorization header
+            const auth_header = try std.fmt.allocPrint(allocator, "Bearer {s}", .{self.api_token});
+            defer allocator.free(auth_header);
+
+            // Create HTTP client
+            var client = std.http.Client{ .allocator = allocator };
+            defer client.deinit();
+
+            // Set up extra headers for SSE streaming
+            const extra_headers: []const std.http.Header = &.{
+                .{ .name = "Content-Type", .value = "application/json" },
+                .{ .name = "Accept", .value = "text/event-stream" },
+                .{ .name = "Authorization", .value = auth_header },
+            };
+
+            // Create an allocating writer to capture the SSE response
+            var response_writer_alloc: std.Io.Writer.Allocating = .init(allocator);
+            defer response_writer_alloc.deinit();
+
+            // Perform the request using fetch
+            const result = client.fetch(.{
+                .location = .{ .url = NVIDIA_API_URL },
+                .method = .POST,
+                .payload = request_body,
+                .extra_headers = extra_headers,
+                .response_writer = &response_writer_alloc.writer,
+            }) catch |err| {
+                std.debug.print("[MCPHandler] Streaming fetch failed: {}\n", .{err});
+                try self.sendStatus(stream, request_id, "error", "Failed to connect to NVIDIA API");
+                return;
+            };
+
+            // Check response status
+            if (result.status != .ok) {
+                std.debug.print("[MCPHandler] Streaming API returned status: {}\n", .{result.status});
+                try self.sendStatus(stream, request_id, "error", "NVIDIA API returned error");
+                return;
+            }
+
+            // Get the full SSE response and process line by line
+            const sse_body = response_writer_alloc.written();
+            std.debug.print("[MCPHandler] SSE response length: {d}\n", .{sse_body.len});
+
+            // Process SSE data lines
+            var lines = std.mem.splitScalar(u8, sse_body, '\n');
+            while (lines.next()) |line| {
+                const trimmed = std.mem.trim(u8, line, " \r\n");
+
+                // Check for SSE data prefix
+                if (std.mem.startsWith(u8, trimmed, "data: ")) {
+                    const data = trimmed[6..];
+
+                    // Skip [DONE] marker
+                    if (std.mem.eql(u8, data, "[DONE]")) {
+                        continue;
+                    }
+
+                    // Parse JSON chunk
+                    const parsed = std.json.parseFromSlice(std.json.Value, allocator, data, .{}) catch continue;
+                    defer parsed.deinit();
+
+                    // Extract content from choices[0].delta.content
+                    if (parsed.value.object.get("choices")) |choices| {
+                        if (choices.array.items.len > 0) {
+                            if (choices.array.items[0].object.get("delta")) |delta| {
+                                if (delta.object.get("content")) |content_val| {
+                                    const content_chunk = content_val.string;
+                                    // Send chunk to WebSocket
+                                    try responseMessage.appendSlice(allocator, content_chunk);
+                                    try self.sendChunk(stream, request_id, content_chunk);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Send completion message
+            const finalizeResponse: []const u8 = try responseMessage.toOwnedSlice(allocator);
+            self.db.insertHistoryChat(finalizeResponse, "", "assistant", "") catch |err| {
+                std.debug.print("[MCPHandler] Failed to save history: {}\n", .{err});
+            };
+            try self.sendStatus(stream, request_id, "complete", "");
+            return;
+        }
 
         std.debug.print("[MCPHandler] Request body length: {d}\n", .{request_body.len});
         std.debug.print("[MCPHandler] {s}\n", .{request_body});
@@ -242,7 +336,7 @@ pub const MCPHandler = struct {
     }
 
     /// Build NVIDIA API request body
-    fn buildRequestBody(self: *Self, allocator: Allocator, prompt: []const u8) ![]const u8 {
+    fn buildRequestBody(self: *Self, allocator: Allocator, prompt: []const u8, isStream: ?bool) ![]const u8 {
         _ = self;
 
         var body: std.ArrayList(u8) = .empty;
@@ -272,8 +366,18 @@ pub const MCPHandler = struct {
                 },
             }
         }
-
-        try body.appendSlice(allocator, "\"}],\"temperature\":0.7,\"top_p\":1,\"max_tokens\":4096,\"stream\":false}");
+        const stream = if (isStream orelse false) "true" else "false";
+        try body.appendSlice(allocator, "\"}],\"temperature\":0.7,\"top_p\":1,\"max_tokens\":16384,\"stream\":");
+        try body.appendSlice(allocator, stream);
+        // try body.appendSlice(allocator, ",\"chat_template_kwargs\":{");
+        // try body.appendSlice(allocator, "\"enable_thinking\":true}");
+        try body.appendSlice(allocator, ",\"reasoning_effort\":");
+        try body.appendSlice(allocator, "\"high\"");
+        // try body.appendSlice(allocator, ",\"frequent_penalty\":");
+        // try body.appendSlice(allocator, "\"0.00\"");
+        // try body.appendSlice(allocator, ",\"presence_penalty\":");
+        // try body.appendSlice(allocator, "\"0.00\"");
+        try body.appendSlice(allocator, "}");
 
         return try body.toOwnedSlice(allocator);
     }

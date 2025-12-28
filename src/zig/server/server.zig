@@ -287,6 +287,7 @@ pub const Server = struct {
             const currentFile: []const u8 = if (root.get("current_file")) |v| v.string else "";
             const content: []const u8 = if (root.get("content")) |v| v.string else "";
             const prompt: []const u8 = if (root.get("prompt")) |v| v.string else "";
+            const isStream: ?bool = if (root.get("isStream")) |v| v.bool else null;
 
             try self.db.insertHistoryChat(prompt, file_path, "user", currentFile);
             try self.mcp_handler.processRequest(
@@ -297,6 +298,7 @@ pub const Server = struct {
                 file_path,
                 content,
                 prompt,
+                isStream,
             );
         } else if (std.mem.eql(u8, msg_type, "health")) {
             try self.sendJsonResponse(stream, .{
