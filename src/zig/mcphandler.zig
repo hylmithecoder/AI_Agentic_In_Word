@@ -34,40 +34,40 @@ pub const MCPHandler = struct {
         stream: net.Stream,
         id: []const u8,
         request_type: []const u8,
-        file_path: ?[]const u8,
+        file_path: []const u8,
         content: ?[]const u8,
         user_prompt: ?[]const u8,
     ) !void {
-        std.debug.print("[MCPHandler] Processing {s} request for path: {s}\n", .{
-            request_type,
-            file_path orelse "none",
-        });
+        std.debug.print("[MCPHandler] Processing {s} request for path: {s}\n and content {s}", .{ request_type, file_path, content orelse "none" });
 
         // Get file content if path is provided and content is not
         var file_content: []const u8 = undefined;
         var should_free_content = false;
 
-        if (content) |c| {
-            file_content = c;
-        } else if (file_path) |path| {
-            file_content = self.readFileOrFolder(allocator, path) catch |err| {
-                try self.sendError(stream, id, "Failed to read file/folder", err);
-                return;
-            };
-            should_free_content = true;
-        } else {
-            try self.sendError(stream, id, "No file path or content provided", error.MissingInput);
+        // if (content) |c| {
+        //     file_content = c;
+        // } else if (file_path) |path| {
+        std.debug.print("File path not null {s}", .{file_path});
+        file_content = self.readFileOrFolder(allocator, file_path) catch |err| {
+            try self.sendError(stream, id, "Failed to read file/folder", err);
             return;
-        }
+        };
+        should_free_content = true;
+        // } else {
+        //     try self.sendError(stream, id, "No file path or content provided", error.MissingInput);
+        //     return;
+        // }
         defer if (should_free_content) allocator.free(file_content);
 
+        std.debug.print("[MCPHandler] Request body length: {d}\n", .{file_content.len});
+        std.debug.print("[MCPHandler] {s}\n", .{file_content});
         // Build the AI prompt
         const prompt = try self.buildPrompt(allocator, request_type, file_path, file_content, user_prompt);
 
         defer allocator.free(prompt);
 
         // Send status update
-        try self.sendStatus(stream, id, "processing", "Sending request to NVIDIA AI...");
+        // try self.sendStatus(stream, id, "processing", "Sending request to NVIDIA AI...");
 
         // Call NVIDIA API
         self.callNvidiaAPI(allocator, stream, id, prompt) catch |err| {
@@ -354,7 +354,7 @@ pub const MCPHandler = struct {
         var parser = std.json.parseFromSlice(std.json.Value, self.allocator, response_body, .{}) catch |err| {
             std.debug.print("[MCPHandler] Failed to parse response: {}\n", .{err});
             std.debug.print("[MCPHandler] Response body: {s}\n", .{response_body[0..@min(response_body.len, 500)]});
-            try self.sendStatus(stream, request_id, "error", "Failed to parse API response");
+            try self.sendErrorResponse(stream, request_id, "Failed to parse API response");
             return;
         };
         defer parser.deinit();
@@ -368,9 +368,8 @@ pub const MCPHandler = struct {
                     if (message.object.get("content")) |content_val| {
                         const content = content_val.string;
 
-                        // Send the complete response as a single chunk
-                        try self.sendChunk(stream, request_id, content);
-                        try self.sendStatus(stream, request_id, "complete", "");
+                        // Send the complete response wrapped in success format
+                        try self.sendSuccessResponse(stream, request_id, content);
                         return;
                     }
                 }
@@ -380,12 +379,60 @@ pub const MCPHandler = struct {
         // Check for error in response
         if (root.get("error")) |error_obj| {
             if (error_obj.object.get("message")) |msg| {
-                try self.sendStatus(stream, request_id, "error", msg.string);
+                try self.sendErrorResponse(stream, request_id, msg.string);
                 return;
             }
         }
 
-        try self.sendStatus(stream, request_id, "error", "Unexpected API response format");
+        try self.sendErrorResponse(stream, request_id, "Unexpected API response format");
+    }
+
+    /// Send success response with content
+    fn sendSuccessResponse(self: *Self, stream: net.Stream, id: []const u8, content: []const u8) !void {
+        // Use dynamic buffer for potentially large content
+        var json_builder = try std.ArrayList(u8).initCapacity(self.allocator, content.len + 256);
+        defer json_builder.deinit(self.allocator);
+
+        try json_builder.appendSlice(self.allocator, "{\"id\":\"");
+        try json_builder.appendSlice(self.allocator, id);
+        try json_builder.appendSlice(self.allocator, "\",\"success\":true,\"content\":\"");
+
+        // Escape content for JSON
+        for (content) |ch| {
+            switch (ch) {
+                '"' => try json_builder.appendSlice(self.allocator, "\\\""),
+                '\\' => try json_builder.appendSlice(self.allocator, "\\\\"),
+                '\n' => try json_builder.appendSlice(self.allocator, "\\n"),
+                '\r' => try json_builder.appendSlice(self.allocator, "\\r"),
+                '\t' => try json_builder.appendSlice(self.allocator, "\\t"),
+                else => {
+                    if (ch < 0x20) {
+                        // Skip control characters
+                    } else {
+                        try json_builder.append(self.allocator, ch);
+                    }
+                },
+            }
+        }
+
+        try json_builder.appendSlice(self.allocator, "\"}");
+
+        try self.sendWebSocketFrame(stream, json_builder.items);
+    }
+
+    /// Send error response
+    fn sendErrorResponse(self: *Self, stream: net.Stream, id: []const u8, error_msg: []const u8) !void {
+        var json_buf: [4096]u8 = undefined;
+        var fbs = std.io.fixedBufferStream(&json_buf);
+        const writer = fbs.writer();
+
+        try writer.writeAll("{\"id\":\"");
+        try writer.writeAll(id);
+        try writer.writeAll("\",\"success\":false,\"error\":\"");
+        try writer.writeAll(error_msg);
+        try writer.writeAll("\"}");
+
+        try self.sendWebSocketFrame(stream, fbs.getWritten());
     }
 
     /// Send a content chunk through WebSocket

@@ -198,32 +198,34 @@ static void ShowMsgBoxWithLocation(const wchar_t *title,
 // ============================================
 // WINDOW MESSAGE BOX MACROS
 // ============================================
-
+#define MSGBOX_TITLE L"Agentic Extension"
 // Info message box (blue icon)
-#define MSGBOX_INFO(title, message)                                            \
-  Debug::ShowMsgBoxWithLocation((title), (std::wstring)(message), __FILE__,    \
-                                __LINE__, MB_OK | MB_ICONINFORMATION)
+#define MSGBOX_INFO(message)                                                   \
+  Debug::ShowMsgBoxWithLocation(MSGBOX_TITLE, (std::wstring)(message),         \
+                                __FILE__, __LINE__,                            \
+                                MB_OK | MB_ICONINFORMATION)
 
 // Success message box (green checkmark)
-#define MSGBOX_SUCCESS(title, message)                                         \
-  Debug::ShowMsgBoxWithLocation((title), (std::wstring)(message), __FILE__,    \
-                                __LINE__, MB_OK | MB_ICONINFORMATION)
+#define MSGBOX_SUCCESS(message)                                                \
+  Debug::ShowMsgBoxWithLocation(MSGBOX_TITLE, (std::wstring)(message),         \
+                                __FILE__, __LINE__,                            \
+                                MB_OK | MB_ICONINFORMATION)
 
 // Warning message box (yellow exclamation)
-#define MSGBOX_WARNING(title, message)                                         \
-  Debug::ShowMsgBoxWithLocation((title), (std::wstring)(message), __FILE__,    \
-                                __LINE__, MB_OK | MB_ICONWARNING)
+#define MSGBOX_WARNING(message)                                                \
+  Debug::ShowMsgBoxWithLocation(MSGBOX_TITLE, (std::wstring)(message),         \
+                                __FILE__, __LINE__, MB_OK | MB_ICONWARNING)
 
 // Error/Crash message box (red X)
-#define MSGBOX_ERROR(title, message)                                           \
-  Debug::ShowMsgBoxWithLocation((title), (std::wstring)(message), __FILE__,    \
-                                __LINE__, MB_OK | MB_ICONERROR)
+#define MSGBOX_ERROR(message)                                                  \
+  Debug::ShowMsgBoxWithLocation(MSGBOX_TITLE, (std::wstring)(message),         \
+                                __FILE__, __LINE__, MB_OK | MB_ICONERROR)
 
 // Crash message box with abort option
-#define MSGBOX_CRASH(title, message)                                           \
+#define MSGBOX_CRASH(message)                                                  \
   do {                                                                         \
-    Debug::ShowMsgBoxWithLocation((title), (std::wstring)(message), __FILE__,  \
-                                  __LINE__,                                    \
+    Debug::ShowMsgBoxWithLocation(MSGBOX_TITLE, (std::wstring)(message),       \
+                                  __FILE__, __LINE__,                          \
                                   MB_ABORTRETRYIGNORE | MB_ICONERROR);         \
     abort();                                                                   \
   } while (0)

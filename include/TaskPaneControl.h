@@ -127,6 +127,9 @@ private:
   // Helper to update file label text
   void UpdateFileLabel();
 
+  // Helper to update chat area with history
+  void UpdateChatArea();
+
   // Direct2D/DirectWrite initialization helpers
   HRESULT InitD2DResources();
   HRESULT CreateRenderTarget();

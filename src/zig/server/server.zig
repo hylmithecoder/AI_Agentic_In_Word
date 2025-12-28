@@ -315,6 +315,31 @@ pub const Server = struct {
         }
     }
 
+    /// Escape a string for JSON output
+    fn escapeJsonString(self: *Self, builder: *std.ArrayList(u8), str: []const u8) !void {
+        for (str) |ch| {
+            switch (ch) {
+                '"' => try builder.appendSlice(self.allocator, "\\\""),
+                '\\' => try builder.appendSlice(self.allocator, "\\\\"),
+                '\n' => try builder.appendSlice(self.allocator, "\\n"),
+                '\r' => try builder.appendSlice(self.allocator, "\\r"),
+                '\t' => try builder.appendSlice(self.allocator, "\\t"),
+                0x08 => try builder.appendSlice(self.allocator, "\\b"), // backspace
+                0x0C => try builder.appendSlice(self.allocator, "\\f"), // form feed
+                else => {
+                    if (ch < 0x20) {
+                        // Encode other control chars as \u00XX
+                        var buf: [6]u8 = undefined;
+                        _ = std.fmt.bufPrint(&buf, "\\u00{x:0>2}", .{ch}) catch continue;
+                        try builder.appendSlice(self.allocator, &buf);
+                    } else {
+                        try builder.append(self.allocator, ch);
+                    }
+                },
+            }
+        }
+    }
+
     /// Handle history request
     fn handleGetHistory(self: *Self, stream: net.Stream) !void {
         var records = self.db.getTables() catch {
@@ -326,11 +351,12 @@ pub const Server = struct {
         };
         defer self.db.freeHistory(&records);
 
-        // Use dynamic ArrayList instead of fixed buffer
-        var json_builder = try std.ArrayList(u8).initCapacity(self.allocator, 4096);
-        // defer json_builder.deinit();
+        // Use dynamic ArrayList for building JSON
+        var json_builder = try std.ArrayList(u8).initCapacity(self.allocator, 8192);
+        defer json_builder.deinit(self.allocator);
 
-        try json_builder.appendSlice(self.allocator, "{\"id\":\"\",\"status\":\"ok\",\"data\":[");
+        // Start JSON object
+        try json_builder.appendSlice(self.allocator, "{\"type\":\"history\",\"status\":\"ok\",\"data\":[");
 
         // Limit records to prevent excessive response size
         const max_records: usize = 50;
@@ -338,40 +364,30 @@ pub const Server = struct {
 
         for (records.items[0..record_count], 0..) |item, i| {
             if (i > 0) try json_builder.appendSlice(self.allocator, ",");
-            try json_builder.appendSlice(self.allocator, "{\"uuid\":\"");
-            try json_builder.appendSlice(self.allocator, item.uuid_str);
-            try json_builder.appendSlice(self.allocator, "\",\"message\":\"");
 
-            // Escape message for JSON
-            for (item.message) |ch| {
-                switch (ch) {
-                    '"' => try json_builder.appendSlice(self.allocator, "\\\""),
-                    '\\' => try json_builder.appendSlice(self.allocator, "\\\\"),
-                    '\n' => try json_builder.appendSlice(self.allocator, "\\n"),
-                    '\r' => try json_builder.appendSlice(self.allocator, "\\r"),
-                    '\t' => try json_builder.appendSlice(self.allocator, "\\t"),
-                    else => {
-                        if (ch < 0x20) {
-                            // Skip control characters
-                        } else {
-                            try json_builder.append(self.allocator, ch);
-                        }
-                    },
-                }
-            }
+            // Build each record object
+            try json_builder.appendSlice(self.allocator, "{\"uuid\":\"");
+            try self.escapeJsonString(&json_builder, item.uuid_str);
+
+            try json_builder.appendSlice(self.allocator, "\",\"message\":\"");
+            try self.escapeJsonString(&json_builder, item.message);
 
             try json_builder.appendSlice(self.allocator, "\",\"timestamp\":\"");
-            try json_builder.appendSlice(self.allocator, item.timestamp);
+            try self.escapeJsonString(&json_builder, item.timestamp);
+
             try json_builder.appendSlice(self.allocator, "\",\"role\":\"");
-            try json_builder.appendSlice(self.allocator, item.role);
+            try self.escapeJsonString(&json_builder, item.role);
+
             try json_builder.appendSlice(self.allocator, "\",\"current_file\":\"");
-            try json_builder.appendSlice(self.allocator, item.current_File);
-            try json_builder.appendSlice(self.allocator, "}");
+            try self.escapeJsonString(&json_builder, item.current_File);
+
+            try json_builder.appendSlice(self.allocator, "\"}");
         }
 
+        // Close JSON array and object
         try json_builder.appendSlice(self.allocator, "]}");
 
-        std.debug.print("[WebSocket] History response size: {d} bytes\n", .{json_builder.items.len});
+        std.debug.print("[WebSocket] History response: {d} records, {d} bytes\n", .{ record_count, json_builder.items.len });
         try self.sendFrame(stream, .text, json_builder.items);
     }
 

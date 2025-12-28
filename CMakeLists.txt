@@ -61,6 +61,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nfd/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann
 )
 
 # Link libraries for COM/ATL

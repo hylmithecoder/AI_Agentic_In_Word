@@ -126,7 +126,7 @@
       <PreprocessorDefinitions>WIN32;_WINDOWS;_DEBUG;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <SDLCheck>true</SDLCheck>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)include;C:\Program Files (x86)\Windows Kits\10\Include\10.0.19041.0\ucrt;C:\Program Files (x86)\Windows Kits\10\Include\10.0.19041.0\um;C:\Program Files (x86)\Windows Kits\10\Include\10.0.19041.0\shared;$(ProjectDir)third_party\nfd\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)include;C:\Program Files (x86)\Windows Kits\10\Include\10.0.19041.0\ucrt;C:\Program Files (x86)\Windows Kits\10\Include\10.0.19041.0\um;C:\Program Files (x86)\Windows Kits\10\Include\10.0.19041.0\shared;$(ProjectDir)third_party\nfd\include;${ProjectDir}third_party\nlohmann;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Midl>
       <MkTypLibCompatible>false</MkTypLibCompatible>
@@ -272,7 +272,9 @@
     <ClCompile Include="src\cpp\Connect.cpp" />
     <ClCompile Include="src\cpp\TaskPaneControl.cpp" />
     <ClCompile Include="src\cpp\client\client.cpp" />
+    <ClCompile Include="src\cpp\client\handlewrite.cpp" />
     <ClCompile Include="third_party\nfd\src\nfd_win.cpp" />
+    <ClCompile Include="third_party\nlohmann\json.hpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="res\AgenticAIOnWord.rc" />

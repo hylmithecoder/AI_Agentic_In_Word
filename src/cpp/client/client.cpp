@@ -13,6 +13,143 @@ static HINTERNET hConnect = NULL;
 static HINTERNET hRequest = NULL;
 static HINTERNET hWebSocket = NULL;
 
+// Static Word Application pointer
+IDispatch *MCPClient::s_pWordApp = nullptr;
+
+// Set Word Application pointer (called from Connect.cpp)
+void MCPClient::SetWordApp(IDispatch *pApp) { s_pWordApp = pApp; }
+
+// Get current Word document name/path
+string MCPClient::GetCurrentWordDocument() {
+  if (!s_pWordApp) {
+    return "[No Word App]";
+  }
+
+  // Get ActiveDocument property from Word Application
+  DISPID dispid;
+  OLECHAR *szMember = (OLECHAR *)L"ActiveDocument";
+  HRESULT hr = s_pWordApp->GetIDsOfNames(IID_NULL, &szMember, 1,
+                                         LOCALE_USER_DEFAULT, &dispid);
+
+  if (FAILED(hr)) {
+    return "[No Active Document]";
+  }
+
+  DISPPARAMS dp = {NULL, NULL, 0, 0};
+  VARIANT result;
+  VariantInit(&result);
+
+  hr = s_pWordApp->Invoke(dispid, IID_NULL, LOCALE_USER_DEFAULT,
+                          DISPATCH_PROPERTYGET, &dp, &result, NULL, NULL);
+
+  if (FAILED(hr) || result.vt != VT_DISPATCH || !result.pdispVal) {
+    VariantClear(&result);
+    return "[No Document Open]";
+  }
+
+  IDispatch *pDoc = result.pdispVal;
+
+  // Try to get FullName first (full path), fallback to Name (just filename for
+  // unsaved docs)
+  szMember = (OLECHAR *)L"FullName";
+  hr =
+      pDoc->GetIDsOfNames(IID_NULL, &szMember, 1, LOCALE_USER_DEFAULT, &dispid);
+
+  if (FAILED(hr)) {
+    // Try Name property instead
+    szMember = (OLECHAR *)L"Name";
+    hr = pDoc->GetIDsOfNames(IID_NULL, &szMember, 1, LOCALE_USER_DEFAULT,
+                             &dispid);
+    if (FAILED(hr)) {
+      pDoc->Release();
+      return "[Unknown Document]";
+    }
+  }
+
+  VARIANT nameResult;
+  VariantInit(&nameResult);
+
+  hr = pDoc->Invoke(dispid, IID_NULL, LOCALE_USER_DEFAULT, DISPATCH_PROPERTYGET,
+                    &dp, &nameResult, NULL, NULL);
+
+  string docName;
+  if (SUCCEEDED(hr) && nameResult.vt == VT_BSTR && nameResult.bstrVal) {
+    // Convert BSTR to string
+    int len = WideCharToMultiByte(CP_UTF8, 0, nameResult.bstrVal, -1, NULL, 0,
+                                  NULL, NULL);
+    if (len > 0) {
+      docName.resize(len - 1);
+      WideCharToMultiByte(CP_UTF8, 0, nameResult.bstrVal, -1, &docName[0], len,
+                          NULL, NULL);
+    }
+  } else {
+    docName = "[Document]";
+  }
+
+  VariantClear(&nameResult);
+  pDoc->Release();
+
+  return docName;
+}
+
+// Check if current Word document is saved (has a file path)
+bool MCPClient::IsDocumentSaved() {
+  if (!s_pWordApp) {
+    return false; // No Word App
+  }
+
+  // Get ActiveDocument property from Word Application
+  DISPID dispid;
+  OLECHAR *szMember = (OLECHAR *)L"ActiveDocument";
+  HRESULT hr = s_pWordApp->GetIDsOfNames(IID_NULL, &szMember, 1,
+                                         LOCALE_USER_DEFAULT, &dispid);
+
+  if (FAILED(hr)) {
+    return false; // No Active Document property
+  }
+
+  DISPPARAMS dp = {NULL, NULL, 0, 0};
+  VARIANT result;
+  VariantInit(&result);
+
+  hr = s_pWordApp->Invoke(dispid, IID_NULL, LOCALE_USER_DEFAULT,
+                          DISPATCH_PROPERTYGET, &dp, &result, NULL, NULL);
+
+  if (FAILED(hr) || result.vt != VT_DISPATCH || !result.pdispVal) {
+    VariantClear(&result);
+    return false; // No Document Open
+  }
+
+  IDispatch *pDoc = result.pdispVal;
+
+  // Get Path property - if empty, document is not saved
+  szMember = (OLECHAR *)L"Path";
+  hr =
+      pDoc->GetIDsOfNames(IID_NULL, &szMember, 1, LOCALE_USER_DEFAULT, &dispid);
+
+  if (FAILED(hr)) {
+    pDoc->Release();
+    return false;
+  }
+
+  VARIANT pathResult;
+  VariantInit(&pathResult);
+
+  hr = pDoc->Invoke(dispid, IID_NULL, LOCALE_USER_DEFAULT, DISPATCH_PROPERTYGET,
+                    &dp, &pathResult, NULL, NULL);
+
+  bool isSaved = false;
+  if (SUCCEEDED(hr) && pathResult.vt == VT_BSTR && pathResult.bstrVal) {
+    // If path has content, document is saved
+    isSaved = (SysStringLen(pathResult.bstrVal) > 0);
+  }
+
+  VariantClear(&pathResult);
+  pDoc->Release();
+
+  return isSaved;
+}
+
 bool MCPClient::ConnectToMCP() {
   if (isConnected && hWebSocket != NULL) {
     return true; // Already connected
@@ -140,7 +277,7 @@ bool MCPClient::ConnectToMCP() {
       recvBuffer[dwBytesRead] = '\0';
       string response = string(recvBuffer);
       wstring responseW = StringToWstring(response);
-      MSGBOX_INFO(L"[MCPHandler]", L"Health check response: " + responseW);
+      // MSGBOX_INFO(L"Health check response: " + responseW);
       DEBUG_LOG("Health check response: %s", recvBuffer);
     } else {
       DEBUG_LOG("Health check receive failed: %lu", dwError);
@@ -168,9 +305,9 @@ void MCPClient::Disconnect() {
   isConnected = false;
 }
 
-string MCPClient::SendMessage(const string &jsonMessage) {
+string MCPClient::SendMessageToWebsocket(const string &jsonMessage) {
   if (!isConnected || !hWebSocket) {
-    MSGBOX_ERROR(L"Not connected to WebSocket", L"Agentic Extension");
+    MSGBOX_ERROR(L"Not connected to WebSocket");
     return "{\"error\":\"Not connected\"}";
   }
 
@@ -180,86 +317,82 @@ string MCPClient::SendMessage(const string &jsonMessage) {
       (PVOID)jsonMessage.c_str(), (DWORD)jsonMessage.length());
 
   if (dwError != ERROR_SUCCESS) {
-    MSGBOX_ERROR(L"WebSocket send failed", L"Agentic Extension");
+    MSGBOX_ERROR(L"WebSocket send failed");
     return "{\"error\":\"Send failed\"}";
   }
 
-  // Receive response
-  char recvBuffer[65536];
+  // Receive response - handle potentially large/fragmented messages
+  string fullResponse;
+  char recvBuffer[8192]; // Smaller buffer for each chunk
   DWORD dwBytesRead = 0;
   WINHTTP_WEB_SOCKET_BUFFER_TYPE bufferType;
 
-  dwError =
-      WinHttpWebSocketReceive(hWebSocket, recvBuffer, sizeof(recvBuffer) - 1,
-                              &dwBytesRead, &bufferType);
+  // Keep receiving until we get the complete message
+  do {
+    dwError =
+        WinHttpWebSocketReceive(hWebSocket, recvBuffer, sizeof(recvBuffer) - 1,
+                                &dwBytesRead, &bufferType);
 
-  if (dwError != ERROR_SUCCESS) {
-    MSGBOX_ERRORF(L"Agentic Extension", L"WebSocket receive failed: %lu",
-                  dwError);
-    DEBUG_LOG("WebSocket receive failed: %lu", dwError);
-    return "{\"error\":\"Receive failed\"}";
-  }
+    if (dwError != ERROR_SUCCESS) {
+      MSGBOX_ERRORF(L"Agentic Extension", L"Websocket receive Failed %lu",
+                    dwError);
+      DEBUG_LOG("WebSocket receive failed: %lu", dwError);
+      return "{\"error\":\"Receive failed\"}";
+    }
 
-  recvBuffer[dwBytesRead] = '\0';
-  return string(recvBuffer);
+    // Append received data to full response
+    recvBuffer[dwBytesRead] = '\0';
+    fullResponse.append(recvBuffer, dwBytesRead);
+
+    // Check if this is the final fragment
+    // WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE = 0x80000002 means final text
+    // frame WINHTTP_WEB_SOCKET_UTF8_FRAGMENT_BUFFER_TYPE = 0x80000003 means
+    // fragment
+  } while (bufferType == WINHTTP_WEB_SOCKET_UTF8_FRAGMENT_BUFFER_TYPE ||
+           bufferType == WINHTTP_WEB_SOCKET_BINARY_FRAGMENT_BUFFER_TYPE);
+
+  // MSGBOX_INFO(L"WebSocket receive " + StringToWstring(fullResponse));
+  DEBUG_LOG("Received full response: %zu bytes", fullResponse.length());
+  return fullResponse;
 }
 
 void MCPClient::SendPrompt(const int &id, const string &prompt,
-                           const string &filePath) {
+                           const string &filePath, const string &currentFile) {
   if (!isConnected) {
     ConnectToMCP();
   }
 
-  // Build JSON request
-  std::stringstream ss;
-  ss << "{\"id\":\"" << id << "\",\"type\":\"analyze\",\"prompt\":\"";
+  // Build JSON request using nlohmann/json
+  json requestJson = {{"id", std::to_string(id)},
+                      {"type", "analyze"},
+                      {"prompt", prompt},
+                      {"file_path", filePath},
+                      {"current_file", currentFile}};
 
-  // Escape prompt for JSON
-  for (char c : prompt) {
-    switch (c) {
-    case '"':
-      ss << "\\\"";
-      break;
-    case '\\':
-      ss << "\\\\";
-      break;
-    case '\n':
-      ss << "\\n";
-      break;
-    case '\r':
-      ss << "\\r";
-      break;
-    case '\t':
-      ss << "\\t";
-      break;
-    default:
-      ss << c;
-      break;
+  string jsonRequest = requestJson.dump();
+  string response = SendMessageToWebsocket(jsonRequest);
+
+  // Parse JSON response
+  try {
+    json responseJson = json::parse(response);
+
+    // Extract content field
+    if (responseJson.contains("content")) {
+      string content = responseJson["content"].get<string>();
+      WriteNonStream(StringToWstring(content));
+      MSGBOX_INFO(L"AI Response:\n" + StringToWstring(content));
+    } else if (responseJson.contains("error")) {
+      string error = responseJson["error"].get<string>();
+      MSGBOX_WARNING(L"Error: " + StringToWstring(error));
+    } else {
+      MSGBOX_WARNING(L"Unexpected response format");
     }
+
+  } catch (json::exception &e) {
+    MSGBOX_WARNING(L"Failed to parse JSON: " + StringToWstring(e.what()));
   }
 
-  ss << "\",\"file_path\":\"";
-
-  // Escape file path for JSON
-  for (char c : filePath) {
-    switch (c) {
-    case '"':
-      ss << "\\\"";
-      break;
-    case '\\':
-      ss << "\\\\";
-      break;
-    default:
-      ss << c;
-      break;
-    }
-  }
-
-  ss << "\"}";
-
-  string response = SendMessage(ss.str());
-  MSGBOX_INFOF(L"Agentic Extension", L"SendPrompt response: %s",
-               response.c_str());
+  SetHistoryChat();
 }
 
 vector<string> MCPClient::getFilePath() {
@@ -267,13 +400,14 @@ vector<string> MCPClient::getFilePath() {
   UniquePathSet outPaths;
 
   // prepare filters for the dialog
-  nfdfilteritem_t filterItem[2] = {{"Source code", "c,cpp,cc"},
-                                   {"Headers", "h,hpp"}};
+  nfdfilteritem_t filterItem[3] = {
+      {"Documents", "pdf, doc, docx, xls, xlsx, ppt, pptx"},
+      {"Sources code", "c,cpp,cc,js,py,rb,java,kt,swift,go,rs,ts"},
+      {"Images", "png,jpg,jpeg,gif,webp"}};
 
   // show the dialog
-  nfdresult_t result = OpenDialogMultiple(outPaths, filterItem, 2);
+  nfdresult_t result = OpenDialogMultiple(outPaths, filterItem, 3);
   if (result == NFD_OKAY) {
-    cout << "Success!" << endl;
 
     nfdpathsetsize_t numPaths;
     PathSet::Count(outPaths, numPaths);
@@ -283,13 +417,10 @@ vector<string> MCPClient::getFilePath() {
       UniquePathSetPath path;
       PathSet::GetPath(outPaths, i, path);
       currentPath.push_back(path.get());
-      cout << "Path " << i << ": " << path.get() << endl;
     }
     return currentPath;
   } else if (result == NFD_CANCEL) {
-    cout << "User pressed cancel." << endl;
   } else {
-    cout << "Error: " << GetError() << endl;
   }
   return currentPath;
 }
@@ -308,33 +439,129 @@ wstring MCPClient::StringToWstring(const string &str) {
   return wstr;
 }
 
-void MCPClient::SetHistoryChat() {
-  if (!isConnected) {
-    MSGBOX_ERROR(L"Not connected to WebSocket", L"Agentic Extension");
-    return;
-  }
+string MCPClient::WstringToString(const wstring &str) {
+  if (str.empty())
+    return "";
 
-  string response = SendMessage("{\"id\":\"1\",\"type\":\"history\"}");
-  ofstream his("history.json");
-  if (!his.is_open()) {
-    std::cerr << "Error: Unable to open the file for writing." << std::endl;
-    return;
-  }
+  int sizeNeeded = WideCharToMultiByte(CP_UTF8, // output UTF-8
+                                       0, str.c_str(), (int)str.size(), nullptr,
+                                       0, nullptr, nullptr);
 
-  // 3. Write data to the file using the stream insertion operator (<<)
-  his << response << std::endl;
+  string result(sizeNeeded, 0);
 
-  // 4. Close the file stream
-  // It's good practice to close the file when you're done.
-  his.close();
+  WideCharToMultiByte(CP_UTF8, 0, str.c_str(), (int)str.size(), &result[0],
+                      sizeNeeded, nullptr, nullptr);
 
-  MSGBOX_INFO(L"Agentic Extension",
-              L"SetHistoryChat response: " + StringToWstring(response));
-  string responseJsonParsed = "";
-  for (char responseChar : response) {
-    responseJsonParsed += responseChar;
-  }
-  // history_chat.push_back(StringToWstring(responseJsonParsed));
+  return result;
 }
 
+void MCPClient::SetHistoryChat() {
+  wstring messageLoaded;
+  if (!isConnected) {
+    MSGBOX_ERROR(L"Not connected to WebSocket");
+    return;
+  }
+
+  // Clear existing history
+  historyChat.clear();
+
+  string response =
+      SendMessageToWebsocket("{\"id\":\"1\",\"type\":\"history\"}");
+
+  // Save to file for debugging
+  ofstream his("history.json");
+  if (his.is_open()) {
+    his << response << std::endl;
+    his.close();
+  }
+
+  // Simple JSON parsing for our specific structure
+  // Expected format: {"type":"history","status":"ok","data":[{...},{...}]}
+
+  // Find "data":[
+  size_t dataStart = response.find("\"data\":[");
+  if (dataStart == string::npos) {
+    DEBUG_LOG("No data array found in response");
+    return;
+  }
+  dataStart += 8; // Skip past "data":[
+
+  // Find each object in the array
+  size_t pos = dataStart;
+  while (pos < response.length()) {
+    // Find start of object
+    size_t objStart = response.find('{', pos);
+    if (objStart == string::npos || objStart >= response.length())
+      break;
+
+    // Find end of object (matching brace)
+    int braceCount = 1;
+    size_t objEnd = objStart + 1;
+    while (objEnd < response.length() && braceCount > 0) {
+      if (response[objEnd] == '{')
+        braceCount++;
+      else if (response[objEnd] == '}')
+        braceCount--;
+      objEnd++;
+    }
+
+    if (braceCount != 0)
+      break;
+
+    string obj = response.substr(objStart, objEnd - objStart);
+
+    // Extract fields from object
+    struct historyChat entry;
+
+    // Extract message
+    size_t msgStart = obj.find("\"message\":\"");
+    if (msgStart != string::npos) {
+      msgStart += 11;
+      size_t msgEnd = msgStart;
+      while (msgEnd < obj.length()) {
+        if (obj[msgEnd] == '"' && (msgEnd == 0 || obj[msgEnd - 1] != '\\'))
+          break;
+        msgEnd++;
+      }
+      entry.message = obj.substr(msgStart, msgEnd - msgStart);
+      messageLoaded = StringToWstring(entry.message) + L"\n";
+    }
+
+    // Extract timestamp
+    size_t tsStart = obj.find("\"timestamp\":\"");
+    if (tsStart != string::npos) {
+      tsStart += 13;
+      size_t tsEnd = obj.find('"', tsStart);
+      if (tsEnd != string::npos) {
+        entry.timestamp = obj.substr(tsStart, tsEnd - tsStart);
+      }
+    }
+
+    // Extract role
+    size_t roleStart = obj.find("\"role\":\"");
+    if (roleStart != string::npos) {
+      roleStart += 8;
+      size_t roleEnd = obj.find('"', roleStart);
+      if (roleEnd != string::npos) {
+        entry.role = obj.substr(roleStart, roleEnd - roleStart);
+      }
+    }
+
+    historyChat.push_back(entry);
+
+    // Move to next object
+    pos = objEnd;
+
+    // Check if we've reached the end of the array
+    size_t nextComma = response.find(',', pos);
+    size_t arrayEnd = response.find(']', pos);
+    if (arrayEnd != string::npos &&
+        (nextComma == string::npos || arrayEnd < nextComma)) {
+      break;
+    }
+  }
+
+  MSGBOX_INFO(L"Loaded " + to_wstring(historyChat.size()) +
+              L" history entries");
+}
 } // namespace MCPHelper

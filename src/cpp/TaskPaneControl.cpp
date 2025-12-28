@@ -1,6 +1,7 @@
 // TaskPaneControl.cpp : Implementation of CTaskPaneControl
 
 #include "TaskPaneControl.h"
+#include "debugger.hpp"
 #include "framework.h"
 #include "resource.h"
 #include <string>
@@ -142,10 +143,10 @@ HRESULT CTaskPaneControl::OnDraw(ATL_DRAWINFO &di) {
   m_renderTarget->FillRectangle(headerRect, m_accentBrush);
 
   // Draw title with emoji support 🤖
-  const wchar_t *title = L"\xD83E\xDD16 Agentic AI Assistant";
+  const wchar_t *titleTask = L"\xD83E\xDD16 Agentic AI Assistant";
   D2D1_RECT_F titleRect = D2D1::RectF(12.0f, 16.0f, (FLOAT)(width - 12), 48.0f);
-  m_renderTarget->DrawText(title, (UINT32)wcslen(title), m_titleTextFormat,
-                           titleRect, m_accentBrush);
+  m_renderTarget->DrawText(titleTask, (UINT32)wcslen(titleTask),
+                           m_titleTextFormat, titleRect, m_accentBrush);
 
   HRESULT hr = m_renderTarget->EndDraw();
 
@@ -249,6 +250,13 @@ LRESULT CTaskPaneControl::OnCreate(UINT uMsg, WPARAM wParam, LPARAM lParam,
                         WS_CHILD | WS_VISIBLE | SS_CENTER);
   m_wndInfoLabel.SendMessage(WM_SETFONT, (WPARAM)m_hTextFont, TRUE);
 
+  // ===== Connect & Load History =====
+  if (client.ConnectToMCP()) {
+    MSGBOX_INFO(L"Connected to MCP");
+    client.SetHistoryChat();
+    UpdateChatArea();
+  }
+
   return 0;
 }
 
@@ -349,12 +357,24 @@ LRESULT CTaskPaneControl::OnCommand(UINT uMsg, WPARAM wParam, LPARAM lParam,
       // Handle send button click
       int len = m_wndInputEdit.GetWindowTextLength();
       if (len > 0) {
+        if (!client.IsDocumentSaved()) {
+          MSGBOX_INFO(L"Document is not saved");
+          return 0;
+        }
         wchar_t *buffer = new wchar_t[len + 1];
         m_wndInputEdit.GetWindowText(buffer, len + 1);
 
-        // For now, show a message box with the input
-        ::MSGBOX_INFO(L"Agentic Extension", buffer);
-
+        string currentDocument = client.GetCurrentWordDocument();
+        string formattedInput = currentDocument + "\n";
+        formattedInput += client.WstringToString(buffer) + "\n";
+        formattedInput += m_selectedFiles[0];
+        ::MSGBOX_INFO(client.StringToWstring(formattedInput));
+        string selectedFiles = "";
+        if (m_selectedFiles[0] != "") {
+          selectedFiles = m_selectedFiles[0];
+        }
+        client.SendPrompt(1, client.WstringToString(buffer), selectedFiles,
+                          currentDocument);
         // Clear input
         m_wndInputEdit.SetWindowText(L"");
         delete[] buffer;
@@ -389,4 +409,66 @@ void CTaskPaneControl::UpdateFileLabel() {
   }
 
   m_wndFileLabel.SetWindowText(labelText.c_str());
+}
+
+// Update chat area with history from server
+void CTaskPaneControl::UpdateChatArea() {
+  // Build chat display text
+  std::wstring chatText;
+
+  // Header with emoji
+  chatText += L"\xD83D\xDCAC Chat History\r\n"; // 💬
+  chatText += L"\x2501\x2501\x2501\x2501\x2501\x2501\x2501\x2501\x2501\x2501"
+              L"\x2501\x2501\x2501\x2501\x2501\r\n\r\n"; // ━ horizontal line
+
+  if (client.historyChat.empty()) {
+    chatText += L"\xD83D\xDC4B Hello! I'm your Agentic AI assistant.\r\n"; // 👋
+    chatText += L"\r\nI can help you with:\r\n";
+    chatText += L"  \x2022 Editing documents\r\n";
+    chatText += L"  \x2022 Answering questions\r\n";
+    chatText += L"  \x2022 Code analysis\r\n";
+    chatText += L"\r\nSelect a file and ask me anything!";
+  } else {
+    // Display last 10 messages (most recent first)
+    size_t startIdx = 0;
+    if (client.historyChat.size() > 10) {
+      startIdx = client.historyChat.size() - 10;
+    }
+
+    for (size_t i = startIdx; i < client.historyChat.size(); i++) {
+      auto &entry = client.historyChat[i];
+
+      // Role emoji
+      if (entry.role == "user") {
+        chatText += L"\xD83D\xDC64 You: "; // 👤 User
+      } else if (entry.role == "assistant") {
+        chatText += L"\xD83E\xDD16 AI: "; // 🤖 Robot
+      } else {
+        chatText += L"\xD83D\xDCAD "; // 💭 Thought bubble
+      }
+
+      // Message content (convert from UTF-8)
+      std::wstring msgW = client.StringToWstring(entry.message);
+
+      // Truncate long messages
+      if (msgW.length() > 100) {
+        msgW = msgW.substr(0, 100) + L"...";
+      }
+      chatText += msgW;
+      chatText += L"\r\n";
+
+      // Timestamp with clock emoji
+      if (!entry.timestamp.empty()) {
+        chatText += L"  \xD83D\xDD52 "; // 🕒 Clock
+        chatText += client.StringToWstring(entry.timestamp);
+        chatText += L"\r\n";
+      }
+      chatText += L"\r\n";
+    }
+  }
+
+  // Update the chat area control
+  if (m_wndChatArea.IsWindow()) {
+    m_wndChatArea.SetWindowText(chatText.c_str());
+  }
 }

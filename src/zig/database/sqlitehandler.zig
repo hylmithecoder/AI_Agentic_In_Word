@@ -116,7 +116,6 @@ pub const SqliteHandler = struct {
         const timestampstring: [19]u8 = getCurrentTimestampString();
         // const timestamp = getCurrentTimestamp();
 
-        std.debug.print("Time Stamp string {s}", .{timestampstring});
         // std.debug.print("Time Stamp {d}", .{timestamp});
         const insert_sql = "INSERT INTO history_chat (uuid, message, timestamp, file, role, current_File) VALUES (?, ?, ?, ?, ?, ?)";
 
@@ -134,7 +133,7 @@ pub const SqliteHandler = struct {
         _ = c.sqlite3_bind_text(stmt, 3, &timestampstring, 19, null);
         _ = c.sqlite3_bind_text(stmt, 4, file.ptr, @intCast(file.len), null);
         _ = c.sqlite3_bind_text(stmt, 5, role.ptr, @intCast(role.len), null);
-        _ = c.sqlite3_bind_text(stmt, 6, currentFile.ptr, @intCast(file.len), null);
+        _ = c.sqlite3_bind_text(stmt, 6, currentFile.ptr, @intCast(currentFile.len), null);
 
         rc = c.sqlite3_step(stmt);
         if (rc != c.SQLITE_DONE) {
